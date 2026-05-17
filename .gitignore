@@ -1,0 +1,17 @@
+# Зависимости
+node_modules/
+
+# Сборка electron-builder
+dist/
+out/
+build/
+
+# Логи
+*.log
+npm-debug.log*
+
+# macOS
+.DS_Store
+
+# Локальные настройки Claude Code
+.claude/settings.local.json

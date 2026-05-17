@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline';"
+    />
+    <title>Настройки</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <h1><span class="ghost">👻</span> AI Ghost — Настройки</h1>
+
+    <label class="field">
+      <span class="label">OpenAI API-ключ</span>
+      <div class="key-row">
+        <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+        <button id="toggleKey" class="mini" title="Показать / скрыть">👁</button>
+      </div>
+    </label>
+
+    <label class="field">
+      <span class="label">Язык распознавания речи</span>
+      <select id="lang">
+        <option value="ru">Русский</option>
+        <option value="en">English</option>
+        <option value="uk">Українська</option>
+        <option value="de">Deutsch</option>
+        <option value="es">Español</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="label">
+        Минимальный интервал между подсказками:
+        <b id="minIntervalVal">15</b> сек
+      </span>
+      <input id="minInterval" type="range" min="10" max="30" step="1" />
+    </label>
+
+    <label class="field">
+      <span class="label">
+        Тишина после вопроса → срочная подсказка:
+        <b id="silenceThresholdVal">5</b> сек
+      </span>
+      <input id="silenceThreshold" type="range" min="3" max="12" step="1" />
+    </label>
+
+    <div class="test-row">
+      <button id="testBtn" class="btn">Проверить ключ</button>
+      <span id="testDot" class="tdot"></span>
+      <span id="testStatus" class="test-status">не проверен</span>
+    </div>
+
+    <div class="footer">
+      <button id="closeBtn" class="btn">Закрыть</button>
+      <button id="saveBtn" class="btn primary">Сохранить</button>
+    </div>
+
+    <script src="settings.js"></script>
+  </body>
+</html>

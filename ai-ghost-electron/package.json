@@ -1,0 +1,36 @@
+{
+  "name": "ai-ghost",
+  "version": "1.0.0",
+  "description": "Невидимый AI-ассистент для собеседований и видеозвонков",
+  "main": "main.js",
+  "author": "AI Ghost",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --mac"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "@ricky0123/vad-web": "^0.0.30",
+    "electron": "^42.1.0",
+    "electron-builder": "^24.13.3",
+    "onnxruntime-web": "^1.26.0"
+  },
+  "build": {
+    "appId": "com.aighost.app",
+    "productName": "AI Ghost",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.png"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*"
+    ]
+  }
+}
