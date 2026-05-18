@@ -1,13 +1,13 @@
 // Захват экрана. Сам снимок и обрезку до области под окном оверлея делает
 // main process (desktopCapturer) — здесь только тонкая обёртка над IPC.
 class ScreenCapture {
-  // Скриншот области экрана под окном оверлея.
-  // Возвращает base64-строку JPEG (без префикса data:) либо null.
-  async captureRegion() {
+  // Интерактивный снимок: пользователь выделяет область мышью.
+  // Возвращает base64-строку JPEG либо null (если выделение отменено).
+  async captureInteractive() {
     try {
-      return await window.ghostAPI.captureRegion();
+      return await window.ghostAPI.captureInteractive();
     } catch (e) {
-      console.warn("capture failed:", e);
+      console.warn("interactive capture failed:", e);
       return null;
     }
   }

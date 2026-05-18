@@ -85,7 +85,8 @@ body {
   letter-spacing: 0.5px;
 }
 
-/* Кнопка закрытия — в шапке, но кликабельна (вне зоны перетаскивания) */
+/* Кнопки свернуть/закрыть — в шапке, но кликабельны (вне зоны перетаскивания) */
+#hide-btn,
 #quit-btn {
   -webkit-app-region: no-drag;
   width: 18px;
@@ -102,6 +103,16 @@ body {
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* «–» крупнее, чтобы читался */
+#hide-btn {
+  font-size: 14px;
+}
+
+#hide-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #e2e3ec;
 }
 
 #quit-btn:hover {
@@ -198,8 +209,8 @@ body {
   color: #e2e3ec;
 }
 
-/* Шестерёнка настроек — прижата к правому краю панели */
-#settings-btn {
+/* Кнопки прозрачности + шестерёнка — прижаты к правому краю панели */
+#opacity-full {
   margin-left: auto;
 }
 
@@ -392,7 +403,7 @@ body {
 #hint-list {
   flex: 1;
   overflow-y: auto;
-  user-select: text;
+  user-select: text; /* текст ответов можно выделять и копировать */
   padding: 4px 14px 14px;
   background: rgba(10, 11, 18, 0.18); /* лёгкая подложка под текстом ответов */
 }

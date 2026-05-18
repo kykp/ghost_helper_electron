@@ -21,6 +21,7 @@ let started = false;
 let micOn = false; // микрофон по умолчанию выключен — включается кнопкой 🎙
 let sysOn = true; // системный звук (голос собеседника) слушаем по умолчанию
 let requesting = false; // запрос в GPT уже идёт — не плодим параллельные
+let lastRequestTs = 0; // время последней реплики на момент прошлого запроса
 let topicInterval = null;
 let tickInterval = null;
 
@@ -67,9 +68,12 @@ async function loadConfig() {
 
 // Плотность фона и размер шрифта ленты задаются в окне настроек.
 // Прозрачность меняет только фон — текст рисуется поверх и остаётся чётким.
-function applyPanelAlpha() {
-  const a = typeof settings.opacity === "number" ? settings.opacity : 0.72;
+function setPanelAlpha(a) {
   document.documentElement.style.setProperty("--panel-alpha", a);
+}
+
+function applyPanelAlpha() {
+  setPanelAlpha(typeof settings.opacity === "number" ? settings.opacity : 0.72);
 }
 
 function applyHintFont() {
@@ -169,7 +173,7 @@ function handleUtterance({ source, text, isRepeat }) {
     buffer.add(text, "them");
     setTicker("⟳ " + text);
     if (triggers) triggers.noteExternalRequest();
-    requestHint("Повтор вопроса");
+    requestHint("Повтор вопроса", { force: true });
     return;
   }
 
@@ -193,8 +197,17 @@ function handleUtterance({ source, text, isRepeat }) {
 }
 
 // --- Запрос голосовой подсказки (по диалогу, без скриншотов) ---
-async function requestHint(reason) {
+async function requestHint(reason, opts = {}) {
   if (!ai || requesting) return;
+
+  // Антидубль: на один вопрос срабатывает несколько триггеров. Если с
+  // прошлого запроса в диалоге не появилось новых реплик — не отвечаем
+  // повторно на тот же вопрос. Ручной запрос (Cmd+Shift+P) не ограничен.
+  const lastEntry = buffer.last();
+  const lastTs = lastEntry ? lastEntry.timestamp : 0;
+  if (!opts.force && lastTs && lastTs === lastRequestTs) return;
+  lastRequestTs = lastTs;
+
   requesting = true;
   showStatus("thinking");
 
@@ -229,15 +242,15 @@ async function requestHint(reason) {
 }
 
 // --- Скриншоты: режим «решение задачи по коду» ---
-// Наводим окно оверлея на задачу, жмём «Снимок» — снимается область экрана
-// под окном. Так можно собрать до MAX_SHOTS снимков (условие на одной
-// странице, данные на другой) и отправить всё одним запросом в GPT.
+// Жмём «Снимок» — оверлей прячется, появляется нативное выделение macOS:
+// тянем рамку по нужной области, отпускаем — снимок добавлен. Так можно
+// собрать до MAX_SHOTS снимков и отправить всё одним запросом в GPT.
 
 async function captureShot() {
   if (!started || shots.length >= MAX_SHOTS) return;
-  const img = await screenCapture.captureRegion();
+  const img = await screenCapture.captureInteractive();
   if (!img) {
-    setTicker("⚠ не удалось снять область", false);
+    setTicker("⚠ снимок не сделан (выделение отменено)", false);
     return;
   }
   shots.push(img);
@@ -572,7 +585,7 @@ updateSysButton();
 window.ghostAPI.onForceHint(() => {
   if (!started) return;
   if (triggers) triggers.noteExternalRequest();
-  requestHint("Ручной запрос");
+  requestHint("Ручной запрос", { force: true });
 });
 
 // Повтор распознавания последних 10 сек микрофона (Cmd+Shift+R).
@@ -590,6 +603,8 @@ window.ghostAPI.onRepeatQuestion(async () => {
 document
   .getElementById("shots-capture")
   .addEventListener("click", captureShot);
+// Снимок области экрана по горячей клавише — Cmd+Shift+C.
+window.ghostAPI.onCaptureShot(() => captureShot());
 document.getElementById("shots-solve").addEventListener("click", solveShots);
 document.getElementById("shots-ask").addEventListener("click", askTaskQuestion);
 renderShots(); // начальное состояние панели (кнопки выключены)
@@ -597,22 +612,35 @@ renderShots(); // начальное состояние панели (кнопк
 // Очистка ленты — кнопка 🗑.
 document.getElementById("clear-btn").addEventListener("click", clearMessages);
 
+// Кнопка «–» в шапке — свернуть оверлей в трей (вернуть — клик по иконке трея).
+document
+  .getElementById("hide-btn")
+  .addEventListener("click", () => window.ghostAPI.hideOverlay());
+
 // Кнопка × в шапке — полный выход из приложения.
 document
   .getElementById("quit-btn")
   .addEventListener("click", () => window.ghostAPI.quitApp());
 
+// --- Быстрая прозрачность фона — кнопки 100% / 0% ---
+// Меняют только подложку: текст и кнопки рисуются поверх и остаются видны.
+document
+  .getElementById("opacity-full")
+  .addEventListener("click", () => setPanelAlpha(1));
+document
+  .getElementById("opacity-low")
+  .addEventListener("click", () => setPanelAlpha(0.2));
+
 // --- Кнопка ⚙ — открыть окно настроек ---
-// Размер шрифта и прозрачность фона теперь настраиваются там.
+// Точная настройка прозрачности и размер шрифта — там.
 document
   .getElementById("settings-btn")
   .addEventListener("click", () => window.ghostAPI.openSettings());
 
 // --- Проброс кликов сквозь ленту ответов ---
-// Зона управления (шапка, кнопки, снимки, тикер) всегда ловит клики.
-// Лента ответов прокликивается насквозь к окну под оверлеем — но как только
-// курсор оказывается на тексте ответа (.hint-msg), клики снова перехватываются,
-// чтобы текст можно было выделить и скопировать.
+// Зона управления (шапка, кнопки, снимки, тикер) и ручки ресайза ловят клики.
+// Над пустым местом ленты клики идут насквозь; над текстом ответа (.hint-msg)
+// окно ловит мышь — чтобы можно было прокручивать и выделять текст.
 const hintList = document.getElementById("hint-list");
 const controlZone = [
   document.getElementById("hint-bar"),
@@ -641,8 +669,8 @@ document.addEventListener("mousemove", (e) => {
     setClickThrough(false);
     return;
   }
-  // На тексте ответа — ловим клики (выделение/копирование);
-  // на пустом месте ленты — пропускаем насквозь.
+  // Над текстом ответа ловим мышь (прокрутка, выделение);
+  // над пустым местом ленты — пропускаем клики насквозь.
   setClickThrough(!e.target.closest(".hint-msg"));
 });
 

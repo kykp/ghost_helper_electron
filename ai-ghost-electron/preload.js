@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("ghostAPI", {
   // Экран
-  captureRegion: () => ipcRenderer.invoke("capture-region"),
+  captureInteractive: () => ipcRenderer.invoke("capture-interactive"),
   screenAccess: () => ipcRenderer.invoke("screen-access"),
   // Настройки
   getApiKey: () => ipcRenderer.invoke("get-api-key"),
@@ -33,9 +33,11 @@ contextBridge.exposeInMainWorld("ghostAPI", {
   onRepeatQuestion: (cb) => ipcRenderer.on("repeat-question", () => cb()),
   onSettingsUpdated: (cb) => ipcRenderer.on("settings-updated", () => cb()),
   onToggleMic: (cb) => ipcRenderer.on("toggle-mic", () => cb()),
+  onCaptureShot: (cb) => ipcRenderer.on("capture-shot", () => cb()),
   // Управление окнами
   openSettings: () => ipcRenderer.send("open-settings"),
   closeSettings: () => ipcRenderer.send("close-settings"),
+  hideOverlay: () => ipcRenderer.send("hide-overlay"),
   quitApp: () => ipcRenderer.send("quit-app"),
   // Проброс кликов: ignore=true → клики проходят сквозь оверлей
   setClickThrough: (ignore) => ipcRenderer.send("set-click-through", ignore),

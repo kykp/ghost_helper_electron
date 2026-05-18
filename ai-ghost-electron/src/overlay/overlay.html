@@ -28,6 +28,7 @@
           <div id="status-dot" class="listening"></div>
           <span id="status-label">слушаю</span>
         </div>
+        <button id="hide-btn" title="Свернуть в трей — Cmd+Shift+G">–</button>
         <button id="quit-btn" title="Закрыть AI Ghost">✕</button>
       </div>
 
@@ -42,13 +43,18 @@
         <button id="clear-btn" title="Очистить ленту ответов">
           Очистить беседу
         </button>
+        <button id="opacity-full" title="Фон окна полностью виден">100%</button>
+        <button id="opacity-low" title="Фон окна почти прозрачный">20%</button>
         <button id="settings-btn" title="Настройки — Cmd+Shift+S">⚙</button>
       </div>
 
       <!-- Режим «решение задачи»: снимки области экрана под окном -->
       <div id="shots-panel">
         <div id="shots-row">
-          <button id="shots-capture" title="Снять область экрана под окном">
+          <button
+            id="shots-capture"
+            title="Выделить область экрана для снимка — Cmd+Shift+C"
+          >
             📷 Снимок
           </button>
           <span id="shots-count">0 / 5</span>

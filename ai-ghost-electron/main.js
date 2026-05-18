@@ -17,6 +17,9 @@ const {
   net,
 } = require("electron");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const { execFile } = require("child_process");
 const { pathToFileURL } = require("url");
 const store = require("./src/utils/store");
 
@@ -43,17 +46,18 @@ protocol.registerSchemesAsPrivileged([
 
 // --- Окно ассистента: обычное (рамка, перемещение, ресайз), невидимое для захвата экрана ---
 function createOverlayWindow() {
-  const { width } = screen.getPrimaryDisplay().workAreaSize;
+  // Рабочая область экрана — без строки меню и Дока.
+  const { x: areaX, y: areaY, width: areaW, height: areaH } =
+    screen.getPrimaryDisplay().workArea;
   const W = 460;
-  const H = 520;
 
   overlayWindow = new BrowserWindow({
     width: W,
-    height: H,
+    height: areaH, // на всю высоту рабочей области экрана
     minWidth: 300,
     minHeight: 220,
-    x: width - W - 20, // правый верхний угол
-    y: 60,
+    x: areaX + areaW - W - 20, // прижат к правому краю
+    y: areaY,
     title: "AI Ghost",
     backgroundColor: "#00000000", // прозрачное окно — фон рисует CSS-подложка
     transparent: true,
@@ -123,6 +127,13 @@ function notifyOverlay(channel) {
   }
 }
 
+// Свернуть / развернуть оверлей — кнопка в шапке, иконка в трее, Cmd+Shift+G.
+function toggleOverlay() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  if (overlayWindow.isVisible()) overlayWindow.hide();
+  else overlayWindow.show();
+}
+
 // --- Запуск ---
 app.whenReady().then(async () => {
   // Отдаём файлы приложения по ghost://app/<путь-от-корня-проекта>.
@@ -166,11 +177,7 @@ app.whenReady().then(async () => {
   createOverlayWindow();
 
   // Горячие клавиши.
-  globalShortcut.register("CommandOrControl+Shift+G", () => {
-    if (!overlayWindow) return;
-    if (overlayWindow.isVisible()) overlayWindow.hide();
-    else overlayWindow.show();
-  });
+  globalShortcut.register("CommandOrControl+Shift+G", toggleOverlay);
   globalShortcut.register("CommandOrControl+Shift+S", createSettingsWindow);
   globalShortcut.register("CommandOrControl+Shift+P", () =>
     notifyOverlay("force-hint")
@@ -181,6 +188,9 @@ app.whenReady().then(async () => {
   globalShortcut.register("CommandOrControl+Shift+M", () =>
     notifyOverlay("toggle-mic")
   );
+  globalShortcut.register("CommandOrControl+Shift+C", () =>
+    notifyOverlay("capture-shot")
+  );
   globalShortcut.register("CommandOrControl+Shift+Q", () => app.quit());
 
   // Иконка в трее.
@@ -189,34 +199,32 @@ app.whenReady().then(async () => {
   );
   trayIcon.setTemplateImage(true);
   tray = new Tray(trayIcon);
-  tray.setToolTip("AI Ghost");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: "Показать / скрыть оверлей",
-        click: () => {
-          if (!overlayWindow) return;
-          if (overlayWindow.isVisible()) overlayWindow.hide();
-          else overlayWindow.show();
-        },
-      },
-      {
-        label: "Микрофон вкл/выкл",
-        click: () => notifyOverlay("toggle-mic"),
-      },
-      {
-        label: "Принудительная подсказка (со скриншотом)",
-        click: () => notifyOverlay("force-hint"),
-      },
-      {
-        label: "Переспросить (повтор распознавания)",
-        click: () => notifyOverlay("repeat-question"),
-      },
-      { label: "Настройки…", click: createSettingsWindow },
-      { type: "separator" },
-      { label: "Выход", click: () => app.quit() },
-    ])
-  );
+  tray.setToolTip("AI Ghost — клик: показать/скрыть, правый клик: меню");
+  const trayMenu = Menu.buildFromTemplate([
+    { label: "Показать / скрыть оверлей", click: toggleOverlay },
+    {
+      label: "Микрофон вкл/выкл",
+      click: () => notifyOverlay("toggle-mic"),
+    },
+    {
+      label: "Принудительная подсказка (со скриншотом)",
+      click: () => notifyOverlay("force-hint"),
+    },
+    {
+      label: "Переспросить (повтор распознавания)",
+      click: () => notifyOverlay("repeat-question"),
+    },
+    {
+      label: "Снимок области экрана",
+      click: () => notifyOverlay("capture-shot"),
+    },
+    { label: "Настройки…", click: createSettingsWindow },
+    { type: "separator" },
+    { label: "Выход", click: () => app.quit() },
+  ]);
+  // Левый клик по иконке в трее — свернуть/развернуть оверлей; правый — меню.
+  tray.on("click", toggleOverlay);
+  tray.on("right-click", () => tray.popUpContextMenu(trayMenu));
 
   // Прячем приложение из дока macOS — управление через трей и хоткеи.
   if (process.platform === "darwin" && app.dock) app.dock.hide();
@@ -228,50 +236,39 @@ app.on("will-quit", () => {
   if (tray && !tray.isDestroyed()) tray.destroy(); // убираем иконку из трея
 });
 
-// --- IPC: скриншот области под окном оверлея ---
-// Оверлей исключён из захвата (setContentProtection), поэтому снимок
-// показывает то, что под ним — задачу на экране, а не само окно.
-ipcMain.handle("capture-region", async () => {
+// --- IPC: интерактивный снимок (выделение области мышью) ---
+// Нативное выделение macOS: пользователь тянет рамку от курсора и отпускает.
+ipcMain.handle("capture-interactive", async () => {
+  if (process.platform !== "darwin") return null;
+  const tmpFile = path.join(os.tmpdir(), `ghost-shot-${Date.now()}.png`);
+  // Прячем оверлей, чтобы он не мешал выделять область.
+  const wasVisible =
+    overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible();
+  if (wasVisible) overlayWindow.hide();
   try {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return null;
-
-    // Прямоугольник контента окна в экранных координатах (DIP).
-    const region = overlayWindow.getContentBounds();
-    const display = screen.getDisplayMatching(region);
-    const scale = display.scaleFactor;
-
-    // Снимаем дисплей в нативном разрешении — чтобы код на экране был
-    // читаем для GPT (detail: "high" даёт прочитать мелкий текст).
-    const sources = await desktopCapturer.getSources({
-      types: ["screen"],
-      thumbnailSize: {
-        width: Math.round(display.size.width * scale),
-        height: Math.round(display.size.height * scale),
-      },
+    await new Promise((resolve) => {
+      // -i — интерактивное выделение области, -x — без звука затвора.
+      execFile("/usr/sbin/screencapture", ["-i", "-x", tmpFile], () =>
+        resolve()
+      );
     });
-    const src =
-      sources.find((s) => String(s.display_id) === String(display.id)) ||
-      sources[0];
-    if (!src || src.thumbnail.isEmpty()) return null;
-
-    // Прямоугольник окна внутри дисплея, в нативных пикселях.
-    const full = src.thumbnail.getSize();
-    let x = Math.round((region.x - display.bounds.x) * scale);
-    let y = Math.round((region.y - display.bounds.y) * scale);
-    let w = Math.round(region.width * scale);
-    let h = Math.round(region.height * scale);
-    // Подрезаем по границам кадра.
-    x = Math.max(0, Math.min(x, full.width - 1));
-    y = Math.max(0, Math.min(y, full.height - 1));
-    w = Math.max(1, Math.min(w, full.width - x));
-    h = Math.max(1, Math.min(h, full.height - y));
-
-    const cropped = src.thumbnail.crop({ x, y, width: w, height: h });
-    if (cropped.isEmpty()) return null;
-    return cropped.toJPEG(85).toString("base64");
+    let buf = null;
+    try {
+      buf = await fs.promises.readFile(tmpFile);
+    } catch (e) {
+      buf = null; // файла нет → пользователь отменил выделение (Esc)
+    }
+    if (!buf) return null;
+    const img = nativeImage.createFromBuffer(buf);
+    return img.isEmpty() ? null : img.toJPEG(85).toString("base64");
   } catch (e) {
-    console.error("capture-region:", e);
+    console.error("capture-interactive:", e);
     return null;
+  } finally {
+    fs.promises.unlink(tmpFile).catch(() => {});
+    if (wasVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.show();
+    }
   }
 });
 
@@ -486,6 +483,11 @@ ipcMain.on("close-settings", () => {
 
 // Кнопка × в безрамочном оверлее — полный выход.
 ipcMain.on("quit-app", () => app.quit());
+
+// Кнопка «–» в шапке оверлея — свернуть окно в трей.
+ipcMain.on("hide-overlay", () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+});
 
 // --- IPC: проброс кликов сквозь ленту ответов ---
 // renderer включает режим, когда курсор над пустым местом ленты: клики уходят
