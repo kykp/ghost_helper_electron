@@ -6,8 +6,12 @@ const el = {
   lang: document.getElementById("lang"),
   minInterval: document.getElementById("minInterval"),
   silenceThreshold: document.getElementById("silenceThreshold"),
+  opacity: document.getElementById("opacity"),
+  fontSize: document.getElementById("fontSize"),
   minIntervalVal: document.getElementById("minIntervalVal"),
   silenceThresholdVal: document.getElementById("silenceThresholdVal"),
+  opacityVal: document.getElementById("opacityVal"),
+  fontSizeVal: document.getElementById("fontSizeVal"),
   testBtn: document.getElementById("testBtn"),
   testDot: document.getElementById("testDot"),
   testStatus: document.getElementById("testStatus"),
@@ -16,7 +20,7 @@ const el = {
 };
 
 // Полные текущие настройки — храним, чтобы при сохранении не затереть
-// поля без UI (например fontSize, которым управляет оверлей).
+// поля, для которых здесь нет элемента управления.
 let savedSettings = {};
 
 // --- Загрузка текущих значений ---
@@ -26,15 +30,19 @@ async function load() {
   el.lang.value = savedSettings.lang || "ru";
   el.minInterval.value = savedSettings.minInterval ?? 10;
   el.silenceThreshold.value = savedSettings.silenceThreshold ?? 5;
+  el.opacity.value = Math.round((savedSettings.opacity ?? 0.72) * 100);
+  el.fontSize.value = savedSettings.fontSize ?? 20;
   syncLabels();
 }
 
 function syncLabels() {
   el.minIntervalVal.textContent = el.minInterval.value;
   el.silenceThresholdVal.textContent = el.silenceThreshold.value;
+  el.opacityVal.textContent = el.opacity.value;
+  el.fontSizeVal.textContent = el.fontSize.value;
 }
 
-["minInterval", "silenceThreshold"].forEach((k) => {
+["minInterval", "silenceThreshold", "opacity", "fontSize"].forEach((k) => {
   el[k].addEventListener("input", syncLabels);
 });
 
@@ -65,10 +73,12 @@ function setTest(state, text) {
 el.saveBtn.addEventListener("click", async () => {
   await window.ghostAPI.setApiKey(el.apiKey.value.trim());
   await window.ghostAPI.setSettings({
-    ...savedSettings, // сохраняем поля без UI (fontSize и т.п.)
+    ...savedSettings, // сохраняем поля, для которых здесь нет UI
     lang: el.lang.value,
     minInterval: Number(el.minInterval.value),
     silenceThreshold: Number(el.silenceThreshold.value),
+    opacity: Number(el.opacity.value) / 100,
+    fontSize: Number(el.fontSize.value),
   });
   el.saveBtn.textContent = "Сохранено ✓";
   setTimeout(() => {

@@ -50,8 +50,8 @@ class VadListener {
       model: "v5",
       baseAssetPath: VAD_ASSET_PATH,
       onnxWASMBasePath: VAD_ASSET_PATH,
-      // Реплика завершается после ~1.5 сек тишины — это целая мысль.
-      redemptionMs: 1500,
+      // Реплика завершается после ~1 сек тишины — это целая мысль.
+      redemptionMs: 1000,
       minSpeechMs: 250,
       preSpeechPadMs: 400,
       positiveSpeechThreshold: 0.5,

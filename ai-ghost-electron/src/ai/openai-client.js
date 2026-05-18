@@ -4,7 +4,7 @@
 const GHOST_SYSTEM_PROMPT = `Ты — невидимый AI-ассистент на техническом собеседовании. Пользователь проходит интервью на позицию Senior Frontend Developer (React / JavaScript / TypeScript).
 
 ТВОЯ РОЛЬ:
-Тебе дают расшифровку диалога. Строки «Собеседник:» — реплики интервьюера. Строки «Я:» — реплики пользователя. Иногда виден скриншот экрана. Твоя задача — мгновенно дать пользователю короткую, точную подсказку, которая поможет ответить уверенно и на уровне Senior.
+Тебе дают расшифровку диалога. Строки «Собеседник:» — реплики интервьюера. Строки «Я:» — реплики пользователя. Твоя задача — мгновенно дать пользователю короткую, точную подсказку, которая поможет ответить уверенно и на уровне Senior.
 
 Помогай ответить на ПОСЛЕДНИЙ вопрос в диалоге. Обычно его задаёт «Собеседник:», но иногда вопрос звучит в строке «Я:» — это значит, что интервьюер прислал вопрос текстом, а пользователь читает его вслух. В этом случае всё равно дай подсказку по этому вопросу. Если последняя реплика «Я:» — это не вопрос, а попытка ответить по сути, реагировать на неё не нужно.
 
@@ -89,6 +89,74 @@ const GHOST_SYSTEM_PROMPT = `Ты — невидимый AI-ассистент �
   В этом случае разбирай только текст вопроса; если и его нет — верни
   {"short":"—","detailed":"","followups":[]} и ничего не придумывай.`;
 
+// Промпт для режима «решение задачи по скриншотам».
+const SOLVE_TASK_PROMPT = `Ты senior JavaScript/TypeScript/React разработчик. Тебе дают 1-5 скриншотов с условием задачи — это может быть алгоритмическая задача ИЛИ задача по React (компонент, хук, исправление бага в JSX). Условие, примеры и данные могут быть распределены по разным скриншотам — собери всё в одну задачу, определи её тип и реши.
+
+ПРАВИЛА ДЛЯ АЛГОРИТМИЧЕСКИХ ЗАДАЧ:
+1. Решай гибко и просто: не следуй формулировке условия буквально — шаги можно объединять, переупорядочивать и упрощать, если так решение чище, лишь бы результат оставался верным. Ищи самый простой путь к ответу.
+2. Предпочитай декларативный стиль: цепочки filter/map/reduce/sort. Императивные циклы — только когда они реально проще или эффективнее.
+3. Не мутируй входные данные. Если нужна сортировка — работай с копией.
+4. Убирай лишнее: если промежуточная переменная используется один раз — встрой её в цепочку. Если Set/Map решает задачу в одну строку вместо ручного цикла — используй их.
+5. Не переусложняй. Между «умным» однострочником и читаемым решением в 3–5 строк выбирай читаемое.
+6. После решения — коротко (2–3 предложения): временная и пространственная сложность, и есть ли альтернативный подход, который стоит знать.
+7. Если в задаче есть краевые случаи (пустой массив, все элементы одинаковые, отрицательные значения) — упомяни их, но не раздувай код проверками, если это не просят.
+
+ПРАВИЛА ДЛЯ REACT-ЗАДАЧ:
+1. Только функциональные компоненты и хуки; классовые — лишь если этого явно требует условие.
+2. Не мутируй state и props — обновляй иммутабельно (новый объект/массив через spread). Когда новое значение зависит от предыдущего — используй функциональную форму setState.
+3. В useEffect/useMemo/useCallback указывай полный и честный массив зависимостей; не «глуши» правило хуков.
+4. useMemo/useCallback/React.memo применяй только там, где это реально убирает лишние ре-рендеры или дорогие вычисления, а не на каждый случай.
+5. Списки рендери со стабильным key (id из данных, а не индекс массива, если есть выбор).
+6. Переиспользуемую или сложную логику выноси в кастомный хук.
+7. JSX держи читаемым: условный рендер через && и тернарник, сложные куски — в отдельные переменные или подкомпоненты.
+8. После решения — коротко: на что обратить внимание (лишние ре-рендеры, производительность, краевые случаи UI).
+
+Общее для обоих типов: между «умным» и читаемым решением выбирай читаемое; не переусложняй.
+
+ДОПОЛНИТЕЛЬНО:
+- Если на скриншотах есть начальная сигнатура функции, шаблон компонента или код — используй именно его.
+- Язык — JavaScript/TypeScript (React — в JSX/TSX); если на скриншоте явно другой стек, используй его.
+- Решай ТОЛЬКО то, что реально видно на скриншотах; не выдумывай условие.
+
+ФОРМАТ ОТВЕТА — верни СТРОГО валидный JSON-объект (без markdown-обёртки вокруг него):
+{
+  "short": "Тип задачи (алгоритм / React), суть и выбранный подход — 1-2 предложения",
+  "detailed": "Разбор решения и ПОЛНЫЙ рабочий код в тройных обратных кавычках (\`\`\`), написанный по правилам своего типа задачи. В конце — закрывающий абзац: для алгоритма сложность по времени и памяти O(...) и альтернативный подход; для React — заметки по ре-рендерам и производительности; в обоих случаях — краевые случаи.",
+  "followups": ["возможная вариация задачи, которую стоит уметь решать", "ещё одна"]
+}
+
+- Если на скриншотах нет задачи по коду — верни {"short":"На скриншотах не видно задачи по коду","detailed":"","followups":[]}.
+- Возвращай ТОЛЬКО JSON-объект.`;
+
+// Голосовые подсказки — быстрая модель (важна задержка).
+const VOICE_MODEL = "gpt-4o-mini";
+// Решение задач по коду — reasoning-модель: думает пошагово, сильна в
+// алгоритмах. Медленнее, но для режима «по кнопке» это приемлемо.
+const TASK_MODEL = "o4-mini";
+
+// --- Маршрутизатор стрим-событий ---
+// Один на модуль: OpenAIClient может пересоздаваться (см. init в overlay.js),
+// а слушатели IPC должны регистрироваться единожды при загрузке скрипта.
+let _streamSink = null; // { onDelta, resolve, reject, raw }
+
+window.ghostAPI.onChatStreamDelta((delta) => {
+  if (!_streamSink) return;
+  _streamSink.raw += delta;
+  try {
+    _streamSink.onDelta(_streamSink.raw);
+  } catch (e) {
+    /* ошибка в onProgress-колбэке не должна рвать стрим */
+  }
+});
+
+window.ghostAPI.onChatStreamEnd((payload) => {
+  if (!_streamSink) return;
+  const sink = _streamSink;
+  _streamSink = null;
+  if (payload && payload.error) sink.reject(new Error(payload.error));
+  else sink.resolve(payload && payload.text != null ? payload.text : sink.raw);
+});
+
 class OpenAIClient {
   constructor(apiKey) {
     this.apiKey = apiKey;
@@ -99,10 +167,10 @@ class OpenAIClient {
     this.apiKey = key;
   }
 
-  // Основной запрос подсказки.
+  // Голосовая подсказка по диалогу (текст, без скриншотов).
   // dialog — текст диалога с метками «Собеседник:» / «Я:».
-  // mode — 'live coding' | 'разговор'.
-  async getHint({ dialog, screenshot, reason, mode }) {
+  // onProgress({ short, detailed }) — вызывается по мере стриминга ответа.
+  async getHint({ dialog, reason }, onProgress) {
     const messages = [{ role: "system", content: GHOST_SYSTEM_PROMPT }];
 
     // Контекст: последние 3 подсказки, чтобы не повторяться.
@@ -110,29 +178,29 @@ class OpenAIClient {
       messages.push({ role: "assistant", content: prev });
     }
 
-    const userContent = [
-      {
-        type: "text",
-        text:
-          `[Триггер: ${reason}]\n` +
-          `[Режим: ${mode || "разговор"}]\n\n` +
-          `Диалог (последние 60 сек):\n${dialog || "(тишина)"}`,
-      },
-    ];
-    if (screenshot) {
-      userContent.push({
-        type: "image_url",
-        image_url: {
-          url: `data:image/jpeg;base64,${screenshot}`,
-          detail: "high", // нужно, чтобы GPT прочитал код на экране
-        },
-      });
-    }
-    messages.push({ role: "user", content: userContent });
-
-    const raw = await this._chat(messages, 1000, 0.6, {
-      type: "json_object",
+    messages.push({
+      role: "user",
+      content:
+        `[Триггер: ${reason}]\n\n` +
+        `Диалог (последние 60 сек):\n${dialog || "(тишина)"}`,
     });
+
+    let raw;
+    try {
+      raw = await this._chatStream(
+        VOICE_MODEL,
+        messages,
+        1000,
+        0.6,
+        { type: "json_object" },
+        (partial) => {
+          if (onProgress) onProgress(this._partialHint(partial));
+        }
+      );
+    } catch (e) {
+      console.error("OpenAI:", e.message);
+      return null;
+    }
     if (!raw) return null;
 
     const hint = this._parseHint(raw);
@@ -142,6 +210,86 @@ class OpenAIClient {
       if (this.recentHints.length > 10) this.recentHints.shift();
     }
     return hint;
+  }
+
+  // Решение задачи по скриншотам (1-3 изображения).
+  // images — массив base64-строк JPEG.
+  async solveTask(images) {
+    if (!images || !images.length) return null;
+
+    const content = [
+      {
+        type: "text",
+        text:
+          `Скриншоты с задачей по программированию (${images.length} шт.). ` +
+          `Условие и данные могут быть распределены по разным снимкам — ` +
+          `собери всё вместе и реши задачу.`,
+      },
+    ];
+    for (const img of images) {
+      content.push({
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${img}`,
+          detail: "high", // нужно прочитать код и мелкий текст
+        },
+      });
+    }
+
+    const messages = [
+      { role: "system", content: SOLVE_TASK_PROMPT },
+      { role: "user", content },
+    ];
+
+    // Бюджет токенов с запасом — reasoning-модель тратит часть на «мысли».
+    const raw = await this._chat(TASK_MODEL, messages, 8000, undefined, {
+      type: "json_object",
+    });
+    if (!raw) return null;
+    return this._parseHint(raw);
+  }
+
+  // Голосовое уточнение к уже решённой задаче.
+  // images — те же скриншоты; prevSolution — предыдущее решение { short,
+  // detailed, ... }; instruction — что попросил пользователь голосом.
+  async refineTask(images, prevSolution, instruction) {
+    if (!images || !images.length) return null;
+
+    const prev =
+      "Краткое: " +
+      ((prevSolution && prevSolution.short) || "—") +
+      "\nРазвёрнутое: " +
+      ((prevSolution && prevSolution.detailed) || "—");
+
+    const content = [
+      {
+        type: "text",
+        text:
+          `Та же задача по программированию (скриншоты ниже). ` +
+          `Уже было дано такое решение:\n${prev}\n\n` +
+          `Пользователь голосом просит уточнение: «${instruction}».\n` +
+          `Дай НОВОЕ решение задачи с учётом этой просьбы — например, ` +
+          `другим способом, алгоритмом или языком. Не повторяй предыдущее ` +
+          `решение дословно. Формат ответа — тот же JSON-объект.`,
+      },
+    ];
+    for (const img of images) {
+      content.push({
+        type: "image_url",
+        image_url: { url: `data:image/jpeg;base64,${img}`, detail: "high" },
+      });
+    }
+
+    const messages = [
+      { role: "system", content: SOLVE_TASK_PROMPT },
+      { role: "user", content },
+    ];
+
+    const raw = await this._chat(TASK_MODEL, messages, 8000, undefined, {
+      type: "json_object",
+    });
+    if (!raw) return null;
+    return this._parseHint(raw);
   }
 
   // Разбор JSON-ответа модели в { short, detailed, followups }.
@@ -168,42 +316,17 @@ class OpenAIClient {
     };
   }
 
-  // Дешёвая классификация по первому скриншоту: на экране IDE/редактор кода?
-  // По ней включается режим live coding (скриншоты прикладываются автоматически).
-  async detectLiveCoding(screenshot) {
-    if (!screenshot) return false;
-    const messages = [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text:
-              "На скриншоте открыт редактор кода или IDE (VS Code, " +
-              "WebStorm, CodeSandbox, LeetCode-редактор и т.п.)? " +
-              "Ответь строго одним словом: да или нет.",
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${screenshot}`,
-              detail: "low",
-            },
-          },
-        ],
-      },
-    ];
-    const answer = await this._chat(messages, 5, 0);
-    return !!answer && /да|yes/i.test(answer);
-  }
-
-  async _chat(messages, maxTokens, temperature, responseFormat) {
-    const body = {
-      model: "gpt-4o-mini",
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    };
+  async _chat(model, messages, maxTokens, temperature, responseFormat) {
+    // reasoning-модели (o1/o3/o4…) используют свой параметр лимита токенов
+    // и не принимают temperature — у них он всегда равен 1.
+    const reasoning = /^o\d/.test(model);
+    const body = { model, messages };
+    if (reasoning) {
+      body.max_completion_tokens = maxTokens;
+    } else {
+      body.max_tokens = maxTokens;
+      body.temperature = temperature;
+    }
     if (responseFormat) body.response_format = responseFormat;
     const res = await window.ghostAPI.chat(this.apiKey, body);
     if (res.error) {
@@ -217,5 +340,61 @@ class OpenAIClient {
       res.data.choices[0].message &&
       res.data.choices[0].message.content;
     return content ? content.trim() : null;
+  }
+
+  // Стриминг-вариант _chat: резолвится полным текстом ответа, а по дороге
+  // зовёт onDelta(накопленный_текст) — для живого показа подсказки.
+  _chatStream(model, messages, maxTokens, temperature, responseFormat, onDelta) {
+    return new Promise((resolve, reject) => {
+      _streamSink = { onDelta: onDelta || (() => {}), resolve, reject, raw: "" };
+      const body = { model, messages, max_tokens: maxTokens, temperature };
+      if (responseFormat) body.response_format = responseFormat;
+      window.ghostAPI.chatStream(this.apiKey, body);
+    });
+  }
+
+  // Достаёт значение строкового поля из (возможно НЕПОЛНОГО) JSON —
+  // нужно, чтобы показывать ответ ещё до того, как он сгенерён целиком.
+  _extractJsonString(text, key) {
+    const at = text.indexOf('"' + key + '"');
+    if (at < 0) return null;
+    let i = text.indexOf(":", at + key.length + 2);
+    if (i < 0) return null;
+    i++;
+    while (i < text.length && /\s/.test(text[i])) i++;
+    if (text[i] !== '"') return null;
+    i++; // за открывающую кавычку
+    let out = "";
+    while (i < text.length) {
+      const c = text[i];
+      if (c === '"') return out; // строка закрылась — поле получено целиком
+      if (c === "\\") {
+        const n = text[i + 1];
+        if (n === undefined) break; // обрыв на середине escape-последовательности
+        if (n === "n") out += "\n";
+        else if (n === "t") out += "\t";
+        else if (n === "r") out += "\r";
+        else if (n === "u") {
+          const hex = text.slice(i + 2, i + 6);
+          if (hex.length < 4) break;
+          out += String.fromCharCode(parseInt(hex, 16));
+          i += 6;
+          continue;
+        } else out += n; // \"  \\  \/  и пр.
+        i += 2;
+        continue;
+      }
+      out += c;
+      i++;
+    }
+    return out; // строка ещё не закрылась — отдаём, что накопилось
+  }
+
+  // Частичный разбор ответа во время стриминга → { short, detailed }.
+  _partialHint(raw) {
+    return {
+      short: this._extractJsonString(raw, "short") || "",
+      detailed: this._extractJsonString(raw, "detailed") || "",
+    };
   }
 }

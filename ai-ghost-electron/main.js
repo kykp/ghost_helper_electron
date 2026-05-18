@@ -55,7 +55,10 @@ function createOverlayWindow() {
     x: width - W - 20, // правый верхний угол
     y: 60,
     title: "AI Ghost",
-    backgroundColor: "#15151f",
+    backgroundColor: "#00000000", // прозрачное окно — фон рисует CSS-подложка
+    transparent: true,
+    frame: false, // безрамочное; перетаскивание — за шапку (CSS app-region)
+    hasShadow: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: true,
@@ -73,6 +76,12 @@ function createOverlayWindow() {
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   overlayWindow.loadURL("ghost://app/src/overlay/overlay.html");
+
+  // Прозрачность подложки регулируется в CSS (см. renderer) — не setOpacity,
+  // чтобы текст оставался чётким при любом фоне.
+
+  // Закрытие окна = полный выход (иконка из трея исчезает).
+  overlayWindow.on("closed", () => app.quit());
 }
 
 // --- Окно настроек ---
@@ -87,12 +96,21 @@ function createSettingsWindow() {
     resizable: false,
     title: "AI Ghost — Настройки",
     backgroundColor: "#15151f",
+    alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // ⭐ Окно настроек содержит API-ключ — исключаем его из захвата экрана,
+  // как и оверлей. И поднимаем на тот же уровень, что оверлей, чтобы оно
+  // открывалось поверх него, а не пряталось под ним.
+  settingsWindow.setContentProtection(true);
+  settingsWindow.setAlwaysOnTop(true, "screen-saver");
+  settingsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
   settingsWindow.loadURL("ghost://app/src/settings/settings.html");
   settingsWindow.on("closed", () => {
     settingsWindow = null;
@@ -204,28 +222,55 @@ app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) app.dock.hide();
 });
 
-// Приложение живёт в трее — не закрываем при закрытии окон.
-app.on("window-all-closed", () => {});
-app.on("will-quit", () => globalShortcut.unregisterAll());
+app.on("window-all-closed", () => app.quit());
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
+  if (tray && !tray.isDestroyed()) tray.destroy(); // убираем иконку из трея
+});
 
-// --- IPC: захват экрана ---
-ipcMain.handle("capture-screen", async () => {
+// --- IPC: скриншот области под окном оверлея ---
+// Оверлей исключён из захвата (setContentProtection), поэтому снимок
+// показывает то, что под ним — задачу на экране, а не само окно.
+ipcMain.handle("capture-region", async () => {
   try {
-    const primary = screen.getPrimaryDisplay();
-    // Снимаем в реальном разрешении дисплея — чтобы код на экране был
-    // читаемым для GPT (с detail: "high" модель видит мелкий текст).
-    const { width, height } = primary.size;
+    if (!overlayWindow || overlayWindow.isDestroyed()) return null;
+
+    // Прямоугольник контента окна в экранных координатах (DIP).
+    const region = overlayWindow.getContentBounds();
+    const display = screen.getDisplayMatching(region);
+    const scale = display.scaleFactor;
+
+    // Снимаем дисплей в нативном разрешении — чтобы код на экране был
+    // читаем для GPT (detail: "high" даёт прочитать мелкий текст).
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
-      thumbnailSize: { width, height },
+      thumbnailSize: {
+        width: Math.round(display.size.width * scale),
+        height: Math.round(display.size.height * scale),
+      },
     });
     const src =
-      sources.find((s) => String(s.display_id) === String(primary.id)) ||
+      sources.find((s) => String(s.display_id) === String(display.id)) ||
       sources[0];
     if (!src || src.thumbnail.isEmpty()) return null;
-    return src.thumbnail.toJPEG(80).toString("base64");
+
+    // Прямоугольник окна внутри дисплея, в нативных пикселях.
+    const full = src.thumbnail.getSize();
+    let x = Math.round((region.x - display.bounds.x) * scale);
+    let y = Math.round((region.y - display.bounds.y) * scale);
+    let w = Math.round(region.width * scale);
+    let h = Math.round(region.height * scale);
+    // Подрезаем по границам кадра.
+    x = Math.max(0, Math.min(x, full.width - 1));
+    y = Math.max(0, Math.min(y, full.height - 1));
+    w = Math.max(1, Math.min(w, full.width - x));
+    h = Math.max(1, Math.min(h, full.height - y));
+
+    const cropped = src.thumbnail.crop({ x, y, width: w, height: h });
+    if (cropped.isEmpty()) return null;
+    return cropped.toJPEG(85).toString("base64");
   } catch (e) {
-    console.error("capture-screen:", e);
+    console.error("capture-region:", e);
     return null;
   }
 });
@@ -244,20 +289,38 @@ ipcMain.handle("set-api-key", (e, key) => {
 ipcMain.handle("get-settings", () => store.get("settings"));
 ipcMain.handle("set-settings", (e, s) => {
   store.set("settings", s);
-  notifyOverlay("settings-updated");
+  notifyOverlay("settings-updated"); // прозрачность подложки применит renderer
 });
 
 // --- IPC: OpenAI (через main, чтобы не упираться в CORS) ---
+
+// fetch с таймаутом: без него зависший запрос навсегда оставляет оверлей
+// в статусе «думаю…» (await не завершается), и весь UI перестаёт отвечать.
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 ipcMain.handle("openai-chat", async (e, { apiKey, body }) => {
   try {
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + apiKey,
+    // Решение задач по скриншотам идёт reasoning-моделью — даём ей время.
+    const resp = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + apiKey,
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      150000
+    );
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       return {
@@ -267,7 +330,94 @@ ipcMain.handle("openai-chat", async (e, { apiKey, body }) => {
     }
     return { data };
   } catch (err) {
-    return { error: "Нет связи с OpenAI API." };
+    return {
+      error:
+        err && err.name === "AbortError"
+          ? "OpenAI не ответил вовремя — попробуйте ещё раз."
+          : "Нет связи с OpenAI API.",
+    };
+  }
+});
+
+// Стриминг чата — ответ отдаётся по мере генерации (для голосовых
+// подсказок: важна скорость появления текста). Дельты летят в renderer
+// событиями «openai-chat-delta», в конце — «openai-chat-end».
+ipcMain.on("openai-chat-stream", async (e, { apiKey, body }) => {
+  const wc = e.sender;
+  const send = (channel, payload) => {
+    if (!wc.isDestroyed()) wc.send(channel, payload);
+  };
+  // Сторожевой таймер: прерываем запрос, если данных нет дольше 45 сек —
+  // иначе зависшее соединение навсегда оставит оверлей в статусе «думаю…».
+  const ac = new AbortController();
+  let idleTimer = null;
+  const armIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => ac.abort(), 45000);
+  };
+  try {
+    armIdle();
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + apiKey,
+      },
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: ac.signal,
+    });
+    if (!resp.ok || !resp.body) {
+      const data = await resp.json().catch(() => ({}));
+      send("openai-chat-end", {
+        error:
+          (data.error && data.error.message) || "Ошибка API " + resp.status,
+      });
+      return;
+    }
+
+    // SSE: строки «data: {…}», копим полный текст ответа.
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      armIdle(); // данные пришли — перезапускаем сторожевой таймер
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop(); // последняя строка может быть неполной
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s.startsWith("data:")) continue;
+        const payload = s.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const json = JSON.parse(payload);
+          const delta =
+            json.choices &&
+            json.choices[0] &&
+            json.choices[0].delta &&
+            json.choices[0].delta.content;
+          if (delta) {
+            full += delta;
+            send("openai-chat-delta", delta);
+          }
+        } catch (err) {
+          /* служебный/неполный фрагмент — пропускаем */
+        }
+      }
+    }
+    send("openai-chat-end", { text: full });
+  } catch (err) {
+    send("openai-chat-end", {
+      error:
+        err && err.name === "AbortError"
+          ? "OpenAI не ответил вовремя — попробуйте ещё раз."
+          : "Нет связи с OpenAI API.",
+    });
+  } finally {
+    clearTimeout(idleTimer);
   }
 });
 
@@ -286,13 +436,14 @@ ipcMain.handle(
       // ⭐ Контекстная подсказка — резко улучшает распознавание тех. терминов.
       if (prompt) form.append("prompt", prompt);
 
-      const resp = await fetch(
+      const resp = await fetchWithTimeout(
         "https://api.openai.com/v1/audio/transcriptions",
         {
           method: "POST",
           headers: { Authorization: "Bearer " + apiKey },
           body: form,
-        }
+        },
+        60000
       );
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -302,7 +453,12 @@ ipcMain.handle(
       }
       return { text: (data.text || "").trim() };
     } catch (err) {
-      return { error: "Нет связи с OpenAI API." };
+      return {
+        error:
+          err && err.name === "AbortError"
+            ? "Распознавание не успело — попробуйте ещё раз."
+            : "Нет связи с OpenAI API.",
+      };
     }
   }
 );
@@ -321,6 +477,33 @@ ipcMain.handle("test-api-key", async (e, key) => {
   }
 });
 
+// Шестерёнка ⚙ в оверлее — открыть окно настроек.
+ipcMain.on("open-settings", createSettingsWindow);
+
 ipcMain.on("close-settings", () => {
   if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
+});
+
+// Кнопка × в безрамочном оверлее — полный выход.
+ipcMain.on("quit-app", () => app.quit());
+
+// --- IPC: проброс кликов сквозь ленту ответов ---
+// renderer включает режим, когда курсор над пустым местом ленты: клики уходят
+// в окно под оверлеем. { forward: true } обязателен — без него окно перестаёт
+// получать mousemove и не заметит возврат курсора на интерактивный элемент.
+ipcMain.on("set-click-through", (e, ignore) => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.setIgnoreMouseEvents(!!ignore, { forward: true });
+  }
+});
+
+// --- IPC: изменение размеров окна оверлея ручками .rsz ---
+ipcMain.handle("get-overlay-bounds", () => {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return null;
+  return overlayWindow.getBounds();
+});
+ipcMain.on("set-overlay-bounds", (e, b) => {
+  if (overlayWindow && !overlayWindow.isDestroyed() && b) {
+    overlayWindow.setBounds(b);
+  }
 });

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self' blob:;"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self' blob:; img-src 'self' data:;"
     />
     <title>AI Ghost Overlay</title>
     <link rel="stylesheet" href="overlay.css" />
@@ -17,10 +17,10 @@
           <svg class="ghost-icon" viewBox="0 0 24 24" fill="none">
             <path
               d="M12 2C7.58 2 4 5.58 4 10v8.5c0 .83.67 1.5 1.5 1.5s1-.67 1-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.17 1.5-1 1.5S10 21 10 21h4s-.17-.5-1-1.5.5-1.5 1.5-1.5 1.5.67 1.5 1.5-.5 1.5 1 1.5 1.5-.67 1.5-1.5V10c0-4.42-3.58-8-8-8z"
-              fill="rgba(255,255,255,0.28)"
+              fill="rgba(99,102,241,0.55)"
             />
-            <circle cx="9.5" cy="10" r="1.2" fill="rgba(255,255,255,0.45)" />
-            <circle cx="14.5" cy="10" r="1.2" fill="rgba(255,255,255,0.45)" />
+            <circle cx="9.5" cy="10" r="1.2" fill="rgba(255,255,255,0.95)" />
+            <circle cx="14.5" cy="10" r="1.2" fill="rgba(255,255,255,0.95)" />
           </svg>
           <span id="hint-title">Ghost</span>
         </div>
@@ -28,15 +28,41 @@
           <div id="status-dot" class="listening"></div>
           <span id="status-label">слушаю</span>
         </div>
+        <button id="quit-btn" title="Закрыть AI Ghost">✕</button>
       </div>
 
       <!-- Панель управления -->
       <div id="hint-controls">
-        <button id="shot-btn" title="Запрос подсказки со скриншотом — Cmd+Shift+P">📸</button>
-        <button id="mic-toggle" title="Микрофон вкл/выкл — Cmd+Shift+M">🎙</button>
-        <button id="clear-btn" title="Очистить ленту ответов">🗑</button>
-        <button id="font-dec" title="Меньше шрифт">A−</button>
-        <button id="font-inc" title="Больше шрифт">A+</button>
+        <button id="mic-toggle" title="Мой микрофон вкл/выкл — Cmd+Shift+M">
+          Мой микрофон вкл
+        </button>
+        <button id="sys-toggle" title="Микрофон собеседника вкл/выкл">
+          Собеседник вкл
+        </button>
+        <button id="clear-btn" title="Очистить ленту ответов">
+          Очистить беседу
+        </button>
+        <button id="settings-btn" title="Настройки — Cmd+Shift+S">⚙</button>
+      </div>
+
+      <!-- Режим «решение задачи»: снимки области экрана под окном -->
+      <div id="shots-panel">
+        <div id="shots-row">
+          <button id="shots-capture" title="Снять область экрана под окном">
+            📷 Снимок
+          </button>
+          <span id="shots-count">0 / 5</span>
+          <button
+            id="shots-ask"
+            title="Добавить голосом уточнение к решённой задаче"
+          >
+            🎤 Уточнить
+          </button>
+          <button id="shots-solve" title="Отправить снимки и получить решение">
+            🧩 Решить
+          </button>
+        </div>
+        <div id="shots-thumbs"></div>
       </div>
 
       <!-- Бегущая строка: последняя распознанная речь -->
@@ -51,6 +77,16 @@
       <!-- Лента подсказок -->
       <div id="hint-list"></div>
     </div>
+
+    <!-- Ручки изменения размеров окна — по краям и углам (см. overlay.js) -->
+    <div class="rsz n" data-dir="n"></div>
+    <div class="rsz s" data-dir="s"></div>
+    <div class="rsz e" data-dir="e"></div>
+    <div class="rsz w" data-dir="w"></div>
+    <div class="rsz nw" data-dir="nw"></div>
+    <div class="rsz ne" data-dir="ne"></div>
+    <div class="rsz sw" data-dir="sw"></div>
+    <div class="rsz se" data-dir="se"></div>
 
     <!-- VAD-движок (vendored): сначала onnxruntime, затем vad-web -->
     <script src="../vendor/vad/ort.wasm.min.js"></script>

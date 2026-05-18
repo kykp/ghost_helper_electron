@@ -10,46 +10,58 @@ body {
 }
 
 body {
-  background: #0b0b11;
+  background: transparent; /* окно прозрачное — фон рисует подложка ниже */
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
     sans-serif;
-  color: #a0a0b0;
+  color: #c8cad6;
   overflow: hidden;
   user-select: none;
+  padding: 8px; /* зазор под тень подложки */
 }
 
-/* Шрифт ленты — управляется кнопками A−/A+ */
+/* --hint-font — размер шрифта ленты, --panel-alpha — плотность фона.
+   Оба значения задаются в окне настроек; здесь — лишь запасные дефолты. */
 :root {
   --hint-font: 14px;
+  --panel-alpha: 0.72;
 }
 
-/* Контент заполняет всё окно */
+/* === Подложка-«матовое стекло» === */
 #hint-container {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: rgba(20, 22, 31, var(--panel-alpha));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 12px 42px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
 }
 
-/* === Шапка === */
+/* === Шапка (зона перетаскивания окна) === */
 #hint-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   flex: none;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  -webkit-app-region: drag; /* перетаскивание безрамочного окна за шапку */
 }
 
 .ghost-logo {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-right: auto;
 }
 
 .ghost-icon {
   width: 18px;
   height: 18px;
-  opacity: 0.55;
+  opacity: 0.85;
 }
 
 #hint-title {
@@ -57,7 +69,7 @@ body {
   font-weight: 600;
   letter-spacing: 1.6px;
   text-transform: uppercase;
-  color: #58586a;
+  color: #7e8194;
 }
 
 .ghost-status {
@@ -69,8 +81,32 @@ body {
 #status-label {
   font-size: 10px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  color: #4a4a58;
+  color: #7d8093;
   letter-spacing: 0.5px;
+}
+
+/* Кнопка закрытия — в шапке, но кликабельна (вне зоны перетаскивания) */
+#quit-btn {
+  -webkit-app-region: no-drag;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #8b8fa3;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+#quit-btn:hover {
+  background: rgba(248, 113, 113, 0.9);
+  color: #fff;
 }
 
 /* === Индикатор статуса === */
@@ -78,7 +114,7 @@ body {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #6b7280;
+  background: #8b8fa3;
   flex: none;
   position: relative;
 }
@@ -93,32 +129,32 @@ body {
 }
 
 #status-dot.listening {
-  background: #4ade80; /* зелёный — слушаю */
+  background: #4ade80;
 }
 #status-dot.listening::after {
   animation: statusPulse 2s ease-in-out infinite;
 }
 
 #status-dot.thinking {
-  background: #facc15; /* жёлтый — думаю */
+  background: #facc15;
 }
 #status-dot.thinking::after {
   animation: statusPulse 0.9s ease-in-out infinite;
 }
 
 #status-dot.error {
-  background: #ef4444; /* красный — ошибка */
+  background: #f87171;
 }
 
 #status-dot.muted {
-  background: #6b7280; /* серый — микрофон выключен */
+  background: #8b8fa3;
 }
 
 @keyframes statusPulse {
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.3;
+    opacity: 0.35;
   }
   50% {
     transform: scale(1.8);
@@ -129,49 +165,191 @@ body {
 /* === Панель управления === */
 #hint-controls {
   display: flex;
+  flex-wrap: wrap; /* текстовые кнопки переносятся на узком окне */
   gap: 6px;
   flex: none;
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 #hint-controls button {
   flex: none;
   height: 28px;
   min-width: 32px;
-  padding: 0 9px;
+  padding: 0 10px;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #808090;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9498ab;
   font-family: inherit;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 #hint-controls button:hover {
-  background: rgba(255, 255, 255, 0.09);
-  color: #c0c0d0;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e2e3ec;
 }
 
-/* Кнопки шрифта — прижаты к правому краю */
-#font-dec {
+/* Шестерёнка настроек — прижата к правому краю панели */
+#settings-btn {
   margin-left: auto;
 }
-#font-dec,
-#font-inc {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11px;
+
+/* Источник звука выключен — кнопка подсвечена красным */
+#mic-toggle.off,
+#sys-toggle.off {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.4);
 }
 
-#mic-toggle.off {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.3);
+/* Источник звука включён — кнопка горит зелёным */
+#mic-toggle:not(.off),
+#sys-toggle:not(.off) {
+  background: rgba(74, 222, 128, 0.18);
+  border-color: rgba(74, 222, 128, 0.5);
+  color: #d6f5e0;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
+}
+
+/* === Режим «решение задачи»: снимки экрана === */
+#shots-panel {
+  flex: none;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#shots-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+#shots-capture,
+#shots-ask,
+#shots-solve {
+  height: 28px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9498ab;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+#shots-capture:hover:not(:disabled),
+#shots-ask:hover:not(:disabled),
+#shots-solve:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e2e3ec;
+}
+
+/* «Уточнить» и «Решить» прижаты к правому краю строки */
+#shots-ask {
+  margin-left: auto;
+}
+
+#shots-solve {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: rgba(99, 102, 241, 0.45);
+  color: #c3c4f5;
+}
+
+#shots-solve:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.34);
+}
+
+/* «Уточнить» в режиме ожидания голоса — подсвечена и пульсирует */
+#shots-ask.armed {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #f5b5b5;
+  animation: askPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes askPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+#shots-capture:disabled,
+#shots-ask:disabled,
+#shots-solve:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#shots-count {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: #777b8e;
+}
+
+#shots-thumbs {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#shots-thumbs:empty {
+  display: none;
+}
+
+.shot-thumb {
+  position: relative;
+  width: 76px;
+  height: 48px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.shot-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.shot-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shot-del:hover {
+  background: rgba(248, 113, 113, 0.95);
 }
 
 /* === Бегущая строка распознанной речи === */
@@ -181,8 +359,8 @@ body {
   gap: 8px;
   flex: none;
   min-height: 30px;
-  padding: 7px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 7px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
 
@@ -190,15 +368,15 @@ body {
   flex: none;
   width: 12px;
   height: 12px;
-  opacity: 0.35;
-  color: #5a5a6a;
+  opacity: 0.5;
+  color: #777b8e;
 }
 
 #ticker-text {
   flex: 1;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 10px;
-  color: #3a3a4a;
+  color: #5f6276;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -207,7 +385,7 @@ body {
 }
 
 #ticker-text.active {
-  color: #5a5a6a;
+  color: #b0b3c5;
 }
 
 /* === Лента подсказок === */
@@ -215,15 +393,21 @@ body {
   flex: 1;
   overflow-y: auto;
   user-select: text;
-  padding: 4px 16px 14px;
+  padding: 4px 14px 14px;
+  background: rgba(10, 11, 18, 0.18); /* лёгкая подложка под текстом ответов */
+}
+
+/* Лента сейчас прозрачна для кликов — клики уходят в окно под оверлеем */
+#hint-list.click-through {
+  border-left: 2px solid rgba(99, 102, 241, 0.25);
 }
 
 /* Лента пуста — плейсхолдер */
 #hint-list:empty::before {
-  content: "Слушаю разговор… подсказка появится автоматически";
+  content: "Подсказки появятся здесь — по разговору или по скриншотам задачи";
   display: block;
   padding-top: 16px;
-  color: #3a3a48;
+  color: #7a7d92;
   font-size: 12px;
   line-height: 1.6;
 }
@@ -245,7 +429,7 @@ body {
 
 /* Разделитель между ответами */
 .hint-msg + .hint-msg {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 /* Подпись-триггер над ответом */
@@ -256,7 +440,7 @@ body {
   margin-bottom: 8px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 9px;
-  color: #3a3a48;
+  color: #62657a;
 }
 
 .hint-trigger::before {
@@ -264,8 +448,7 @@ body {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #6366f1;
-  opacity: 0.6;
+  background: #818cf8;
 }
 
 /* Краткий ответ — сверху, акцентом */
@@ -273,7 +456,7 @@ body {
   font-size: calc(var(--hint-font) + 1px);
   font-weight: 600;
   line-height: 1.5;
-  color: #eef0ff;
+  color: #ffffff;
   white-space: pre-wrap;
 }
 
@@ -285,7 +468,7 @@ body {
 .hint-para {
   font-size: var(--hint-font);
   line-height: 1.6;
-  color: #c0c2d4;
+  color: #e2e4ef;
   white-space: pre-wrap;
 }
 
@@ -299,8 +482,8 @@ body {
 .hint-code {
   margin: 7px 0;
   padding: 9px 11px;
-  background: #0c0c14;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 7px;
   overflow-x: auto;
 }
@@ -309,7 +492,7 @@ body {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: calc(var(--hint-font) - 2px);
   line-height: 1.55;
-  color: #b9d6c4;
+  color: #dce8f0;
   white-space: pre;
 }
 
@@ -317,7 +500,7 @@ body {
   height: 5px;
 }
 .hint-code::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 3px;
 }
 
@@ -325,7 +508,7 @@ body {
 .hint-followups {
   margin-top: 11px;
   padding-top: 9px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
 .hint-followups-title {
@@ -333,14 +516,14 @@ body {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #4a4a5c;
+  color: #62657a;
   margin-bottom: 5px;
 }
 
 .hint-followup {
   font-size: calc(var(--hint-font) - 1px);
   line-height: 1.5;
-  color: #8a8ca0;
+  color: #a8abbd;
   padding-left: 13px;
   position: relative;
 }
@@ -353,7 +536,7 @@ body {
   content: "?";
   position: absolute;
   left: 0;
-  color: #6366f1;
+  color: #818cf8;
   font-weight: 700;
 }
 
@@ -365,7 +548,7 @@ body {
 }
 
 .hint-msg.system .hint-text {
-  color: #facc15;
+  color: #fcd34d;
   font-size: calc(var(--hint-font) - 1px);
 }
 
@@ -374,6 +557,76 @@ body {
 }
 
 #hint-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 3px;
+}
+
+/* === Ручки изменения размеров окна === */
+/* Невидимые полосы по краям и квадраты в углах. Меняют курсор на resize,
+   тянут границы окна через IPC (логика — overlay.js). Нужны потому, что
+   нативный ресайз ненадёжен: края окна прозрачные, шапка — зона
+   перетаскивания, а лента пробрасывает клики насквозь. */
+.rsz {
+  position: fixed;
+  z-index: 100;
+  -webkit-app-region: no-drag;
+}
+
+.rsz.n,
+.rsz.s {
+  left: 18px;
+  right: 18px;
+  height: 8px;
+}
+
+.rsz.e,
+.rsz.w {
+  top: 18px;
+  bottom: 18px;
+  width: 8px;
+}
+
+.rsz.nw,
+.rsz.ne,
+.rsz.sw,
+.rsz.se {
+  width: 20px;
+  height: 20px;
+}
+
+.rsz.n {
+  top: 0;
+  cursor: ns-resize;
+}
+.rsz.s {
+  bottom: 0;
+  cursor: ns-resize;
+}
+.rsz.w {
+  left: 0;
+  cursor: ew-resize;
+}
+.rsz.e {
+  right: 0;
+  cursor: ew-resize;
+}
+.rsz.nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.rsz.se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.rsz.ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.rsz.sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
 }

@@ -1,5 +1,5 @@
 // Координатор триггеров + антиспам.
-// Решает, КОГДА и ПОЧЕМУ отправлять запрос в GPT, с учётом того,
+// Решает, КОГДА и ПОЧЕМУ отправлять голосовой запрос в GPT, с учётом того,
 // кто говорил последним — я или собеседник.
 //
 // Логика:
@@ -15,11 +15,11 @@ class TriggerManager {
   constructor(opts = {}) {
     this.minInterval = (opts.minIntervalSec ?? 10) * 1000;
     this.maxPerMinute = 5;
-    this.questionDelayMs = 2000; // пауза после вопроса
+    this.questionDelayMs = 800; // пауза после вопроса
     this.topicDelayMs = 4000; // пауза после смены темы
     this.silenceAfterQuestionMs = (opts.silenceThresholdSec ?? 5) * 1000;
 
-    this.onTrigger = null; // callback(reason, withScreenshot)
+    this.onTrigger = null; // callback(reason)
 
     this.question = new QuestionTrigger();
     this.topic = new TopicTrigger();
@@ -33,16 +33,9 @@ class TriggerManager {
     this.lastSpeaker = null; // 'me' | 'them'
     this.speaking = { me: false, them: false }; // кто сейчас говорит
     this.lastSpeechEndTime = Date.now();
-    this.pending = null; // { reason, fireAt, screenshot }
+    this.pending = null; // { reason, delayMs }
     this.openQuestion = null; // { time } — вопрос собеседника без моего ответа
     this.urgentFired = false; // срочный запрос по этому вопросу уже был
-
-    // Слова, после которых к запросу нужен скриншот экрана.
-    this.screenKeywords = [
-      "посмотрите на экран", "посмотри на экран", "вот код", "вот здесь",
-      "здесь", "видите", "видишь", "давайте напишем", "давай напишем",
-      "на экране", "look at", "here", "see this", "let's write", "let us write",
-    ];
   }
 
   setMinInterval(sec) {
@@ -79,10 +72,8 @@ class TriggerManager {
   handleUtterance({ source, text }) {
     this.lastSpeaker = source;
     const now = Date.now();
-    const screenshot = this._needsScreenshot(text);
-    const isQuestion = this.question.test(text);
 
-    if (isQuestion) {
+    if (this.question.test(text)) {
       // Вопрос задан собеседником вслух ИЛИ озвучен мной (например, прочитан
       // из текстового чата) — в обоих случаях нужна подсказка.
       if (source === "them") {
@@ -92,7 +83,7 @@ class TriggerManager {
       }
       const reason =
         source === "them" ? "Вопрос собеседника" : "Вопрос (ваш голос)";
-      this._schedule(reason, this.questionDelayMs, screenshot);
+      this._schedule(reason, this.questionDelayMs);
       return;
     }
 
@@ -101,15 +92,9 @@ class TriggerManager {
       // Я отвечаю своими словами — отложенная подсказка не нужна.
       this.pending = null;
       this.openQuestion = null;
-      return;
     }
-
-    // Собеседник продолжает не-вопросом: если ждём его вопрос — паузу
-    // отсчитываем заново (lastSpeechEndTime обновится на handleSpeechEnd),
-    // подхватываем скриншот, если он стал нужен.
-    if (this.pending && this.pending.reason === "Вопрос собеседника") {
-      if (screenshot) this.pending.screenshot = true;
-    }
+    // Собеседник продолжает не-вопросом — просто копим буфер; паузу
+    // отложенного триггера lastSpeechEndTime отсчитает заново сам.
   }
 
   // Периодическая проверка смены темы (вызывается по таймеру из overlay).
@@ -117,7 +102,7 @@ class TriggerManager {
     if (this.lastSpeaker !== "them") return;
     if (this.pending && this.pending.reason === "Вопрос собеседника") return;
     if (this.topic.check(recentText, previousText)) {
-      this._schedule("Смена темы разговора", this.topicDelayMs, false);
+      this._schedule("Смена темы разговора", this.topicDelayMs);
     }
   }
 
@@ -129,7 +114,7 @@ class TriggerManager {
 
     // Отложенный триггер: пора, если выждали нужную паузу.
     if (this.pending && silenceMs >= this.pending.delayMs) {
-      if (this._fire(this.pending.reason, this.pending.screenshot)) {
+      if (this._fire(this.pending.reason)) {
         this.pending = null;
       }
       return;
@@ -142,7 +127,7 @@ class TriggerManager {
       this.lastSpeaker === "them" &&
       silenceMs >= this.silenceAfterQuestionMs
     ) {
-      if (this._fire("Тишина после вопроса", false)) {
+      if (this._fire("Тишина после вопроса")) {
         this.urgentFired = true;
       }
     }
@@ -157,17 +142,12 @@ class TriggerManager {
 
   // --- Внутреннее ---
 
-  _schedule(reason, delayMs, screenshot) {
-    this.pending = { reason, delayMs, screenshot: !!screenshot };
-  }
-
-  _needsScreenshot(text) {
-    const t = (text || "").toLowerCase();
-    return this.screenKeywords.some((k) => t.includes(k));
+  _schedule(reason, delayMs) {
+    this.pending = { reason, delayMs };
   }
 
   // Антиспам + вызов колбэка.
-  _fire(reason, screenshot) {
+  _fire(reason) {
     const now = Date.now();
 
     if (now - this.lastRequestTime < this.minInterval) {
@@ -185,8 +165,8 @@ class TriggerManager {
 
     this.lastRequestTime = now;
     this.requestCount++;
-    console.log(`🔥 Триггер: ${reason}${screenshot ? " + скриншот" : ""}`);
-    if (this.onTrigger) this.onTrigger(reason, screenshot);
+    console.log(`🔥 Триггер: ${reason}`);
+    if (this.onTrigger) this.onTrigger(reason);
     return true;
   }
 }

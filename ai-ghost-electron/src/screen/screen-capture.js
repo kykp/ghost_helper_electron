@@ -1,10 +1,11 @@
-// Захват экрана. Сам снимок и сжатие в JPEG/base64 делает main process
-// (desktopCapturer) — здесь только тонкая обёртка над IPC.
+// Захват экрана. Сам снимок и обрезку до области под окном оверлея делает
+// main process (desktopCapturer) — здесь только тонкая обёртка над IPC.
 class ScreenCapture {
+  // Скриншот области экрана под окном оверлея.
   // Возвращает base64-строку JPEG (без префикса data:) либо null.
-  async capture() {
+  async captureRegion() {
     try {
-      return await window.ghostAPI.captureScreen();
+      return await window.ghostAPI.captureRegion();
     } catch (e) {
       console.warn("capture failed:", e);
       return null;
