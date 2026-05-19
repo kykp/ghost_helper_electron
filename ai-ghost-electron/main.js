@@ -44,20 +44,62 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// Восстановление сохранённого размера/позиции окна. Если сохранённого нет
+// или окно не попадает ни на один экран — берём значения по умолчанию.
+function loadOverlayBounds(fallback) {
+  const saved = store.get("overlay-bounds");
+  if (!saved || typeof saved.width !== "number") return fallback;
+  const visible = screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return (
+      saved.x < a.x + a.width &&
+      saved.x + saved.width > a.x &&
+      saved.y < a.y + a.height &&
+      saved.y + saved.height > a.y
+    );
+  });
+  if (!visible) return fallback;
+  return {
+    x: Math.round(saved.x),
+    y: Math.round(saved.y),
+    width: Math.max(300, Math.round(saved.width)),
+    height: Math.max(220, Math.round(saved.height)),
+  };
+}
+
+// Сохранение размера/позиции окна. Дебаунс — при ресайзе/перетаскивании
+// события сыплются десятками в секунду, в store пишем только по затиханию.
+let saveBoundsTimer = null;
+function saveOverlayBounds() {
+  clearTimeout(saveBoundsTimer);
+  saveBoundsTimer = setTimeout(() => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      store.set("overlay-bounds", overlayWindow.getBounds());
+    }
+  }, 400);
+}
+
 // --- Окно ассистента: обычное (рамка, перемещение, ресайз), невидимое для захвата экрана ---
 function createOverlayWindow() {
   // Рабочая область экрана — без строки меню и Дока.
   const { x: areaX, y: areaY, width: areaW, height: areaH } =
     screen.getPrimaryDisplay().workArea;
   const W = 460;
+  // По умолчанию — узкая панель на всю высоту у правого края экрана.
+  const bounds = loadOverlayBounds({
+    x: areaX + areaW - W - 20,
+    y: areaY,
+    width: W,
+    height: areaH,
+  });
 
   overlayWindow = new BrowserWindow({
-    width: W,
-    height: areaH, // на всю высоту рабочей области экрана
+    width: bounds.width,
+    height: bounds.height,
     minWidth: 300,
     minHeight: 220,
-    x: areaX + areaW - W - 20, // прижат к правому краю
-    y: areaY,
+    x: bounds.x,
+    y: bounds.y,
     title: "AI Ghost",
     backgroundColor: "#00000000", // прозрачное окно — фон рисует CSS-подложка
     transparent: true,
@@ -84,8 +126,12 @@ function createOverlayWindow() {
   // Прозрачность подложки регулируется в CSS (см. renderer) — не setOpacity,
   // чтобы текст оставался чётким при любом фоне.
 
+  // Запоминаем размер и положение — восстановим при следующем запуске.
+  overlayWindow.on("resize", saveOverlayBounds);
+  overlayWindow.on("move", saveOverlayBounds);
+
   // Закрытие окна = полный выход (иконка из трея исчезает).
-  overlayWindow.on("closed", () => app.quit());
+  overlayWindow.on("closed", quitApp);
 }
 
 // --- Окно настроек ---
@@ -132,6 +178,17 @@ function toggleOverlay() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   if (overlayWindow.isVisible()) overlayWindow.hide();
   else overlayWindow.show();
+}
+
+// Полный выход. Иконку из трея снимаем сразу, чтобы не «висела», а через
+// полсекунды жёстко добиваем процесс — на случай, если мягкий выход завис.
+let quitting = false;
+function quitApp() {
+  if (quitting) return;
+  quitting = true;
+  if (tray && !tray.isDestroyed()) tray.destroy();
+  app.quit();
+  setTimeout(() => app.exit(0), 500);
 }
 
 // --- Запуск ---
@@ -191,7 +248,7 @@ app.whenReady().then(async () => {
   globalShortcut.register("CommandOrControl+Shift+C", () =>
     notifyOverlay("capture-shot")
   );
-  globalShortcut.register("CommandOrControl+Shift+Q", () => app.quit());
+  globalShortcut.register("CommandOrControl+Shift+Q", quitApp);
 
   // Иконка в трее.
   const trayIcon = nativeImage.createFromPath(
@@ -220,7 +277,7 @@ app.whenReady().then(async () => {
     },
     { label: "Настройки…", click: createSettingsWindow },
     { type: "separator" },
-    { label: "Выход", click: () => app.quit() },
+    { label: "Выход", click: quitApp },
   ]);
   // Левый клик по иконке в трее — свернуть/развернуть оверлей; правый — меню.
   tray.on("click", toggleOverlay);
@@ -230,7 +287,7 @@ app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) app.dock.hide();
 });
 
-app.on("window-all-closed", () => app.quit());
+app.on("window-all-closed", quitApp);
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   if (tray && !tray.isDestroyed()) tray.destroy(); // убираем иконку из трея
@@ -482,7 +539,7 @@ ipcMain.on("close-settings", () => {
 });
 
 // Кнопка × в безрамочном оверлее — полный выход.
-ipcMain.on("quit-app", () => app.quit());
+ipcMain.on("quit-app", quitApp);
 
 // Кнопка «–» в шапке оверлея — свернуть окно в трей.
 ipcMain.on("hide-overlay", () => {

@@ -279,6 +279,7 @@ function renderShots() {
     del.textContent = "✕";
     del.title = "Убрать снимок";
     del.addEventListener("click", () => removeShot(i));
+    setupDwell(del); // удаление снимка — тоже по удержанию курсора
     thumb.appendChild(del);
 
     strip.appendChild(thumb);
@@ -576,13 +577,10 @@ document
   .addEventListener("click", clearConversation);
 
 // --- Активация кнопок удержанием курсора ---
-// Наводим курсор на кнопку (панель управления + «Решить») и держим 3 сек —
-// кнопка срабатывает, как клик. Снизу бежит полоска-индикатор.
-// Обычный клик тоже работает.
+// Наводим курсор на кнопку и держим 3 сек — она срабатывает, как клик.
+// Снизу бежит полоска-индикатор. Обычный клик тоже работает.
 const DWELL_MS = 3000;
-document
-  .querySelectorAll("#hint-controls button, #shots-solve")
-  .forEach((btn) => {
+function setupDwell(btn) {
   let timer = null;
   const cancel = () => {
     if (timer) clearTimeout(timer);
@@ -599,7 +597,11 @@ document
   });
   btn.addEventListener("mouseleave", cancel);
   btn.addEventListener("click", cancel); // обычный клик — отменяем удержание
-});
+}
+// Постоянные кнопки панели; кнопки удаления снимков подключаются в renderShots.
+document
+  .querySelectorAll("#hint-controls button, #shots-capture, #shots-solve")
+  .forEach(setupDwell);
 
 // Кнопка «–» в шапке — свернуть оверлей в трей (вернуть — клик по иконке трея).
 document

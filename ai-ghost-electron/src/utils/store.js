@@ -6,6 +6,7 @@ const store = new Store({
   encryptionKey: "ai-ghost-secret",
   defaults: {
     "openai-api-key": "",
+    "overlay-bounds": null, // { x, y, width, height } — размер/позиция окна
     settings: {
       lang: "ru", // язык распознавания речи
       minInterval: 10, // мин. интервал между запросами в GPT, сек (антиспам)

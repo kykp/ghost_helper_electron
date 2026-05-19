@@ -213,7 +213,9 @@ body {
 
 /* Индикатор удержания курсора — полоска снизу растёт за 3 сек до срабатывания */
 #hint-controls button::after,
-#shots-solve::after {
+#shots-capture::after,
+#shots-solve::after,
+.shot-del::after {
   content: "";
   position: absolute;
   left: 0;
@@ -225,7 +227,9 @@ body {
 }
 
 #hint-controls button.dwelling::after,
-#shots-solve.dwelling::after {
+#shots-capture.dwelling::after,
+#shots-solve.dwelling::after,
+.shot-del.dwelling::after {
   width: 100%;
   transition: width 3s linear;
 }
@@ -278,6 +282,8 @@ body {
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -293,8 +299,6 @@ body {
   background: rgba(99, 102, 241, 0.22);
   border-color: rgba(99, 102, 241, 0.45);
   color: #c3c4f5;
-  position: relative;
-  overflow: hidden;
 }
 
 #shots-solve:hover:not(:disabled) {
@@ -356,6 +360,7 @@ body {
   font-size: 9px;
   line-height: 1;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .shot-del:hover {
