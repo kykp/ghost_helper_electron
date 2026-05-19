@@ -45,6 +45,14 @@ class TriggerManager {
     this.silenceAfterQuestionMs = sec * 1000;
   }
 
+  // Сброс состояния разговора — после очистки беседы.
+  reset() {
+    this.pending = null;
+    this.openQuestion = null;
+    this.urgentFired = false;
+    this.lastSpeaker = null;
+  }
+
   // --- Входящие события речи ---
 
   handleSpeechStart(source) {
@@ -73,28 +81,36 @@ class TriggerManager {
     this.lastSpeaker = source;
     const now = Date.now();
 
-    if (this.question.test(text)) {
-      // Вопрос задан собеседником вслух ИЛИ озвучен мной (например, прочитан
-      // из текстового чата) — в обоих случаях нужна подсказка.
+    const isQuestion = this.question.test(text);
+    // Длинную реплику собеседника считаем поводом ответить, даже если она
+    // формально не «вопрос»: длинные/сложные вопросы и задачи Whisper часто
+    // распознаёт без «?» и не с вопросительного слова — регулярка их теряет.
+    const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
+    const longFromThem = source === "them" && words >= 5;
+
+    if (isQuestion || longFromThem) {
+      // Вопрос/задача от собеседника ИЛИ вопрос, озвученный мной (например,
+      // прочитанный из текстового чата) — в обоих случаях нужна подсказка.
       if (source === "them") {
-        // Срочный «я завис» отслеживаем только для вопросов собеседника.
+        // Срочный «я завис» отслеживаем только для реплик собеседника.
         this.openQuestion = { time: now };
         this.urgentFired = false;
       }
-      const reason =
-        source === "them" ? "Вопрос собеседника" : "Вопрос (ваш голос)";
+      let reason;
+      if (source === "me") reason = "Вопрос (ваш голос)";
+      else reason = isQuestion ? "Вопрос собеседника" : "Реплика собеседника";
       this._schedule(reason, this.questionDelayMs);
       return;
     }
 
-    // Не вопрос.
+    // Короткая не-вопросная реплика.
     if (source === "me") {
       // Я отвечаю своими словами — отложенная подсказка не нужна.
       this.pending = null;
       this.openQuestion = null;
     }
-    // Собеседник продолжает не-вопросом — просто копим буфер; паузу
-    // отложенного триггера lastSpeechEndTime отсчитает заново сам.
+    // Короткую реплику собеседника просто копим в буфере; паузу отложенного
+    // триггера lastSpeechEndTime отсчитает заново сам.
   }
 
   // Периодическая проверка смены темы (вызывается по таймеру из overlay).

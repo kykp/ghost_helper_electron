@@ -29,10 +29,9 @@ let tickInterval = null;
 const MAX_SHOTS = 5;
 let shots = [];
 
-// Последняя решённая задача — для голосовых уточнений к ней.
+// Активная решённая задача. Пока она задана — весь разговор трактуется как
+// обсуждение этой задачи: ответы идут в её контексте. Сброс — кнопкой 🗑.
 let lastTask = null; // { images: [base64], solution: hint }
-let awaitingTaskQuestion = false; // ждём голосовое уточнение (кнопка «Уточнить»)
-let awaitTimer = null;
 
 // --- Источники звука ---
 function getMicStream() {
@@ -177,17 +176,6 @@ function handleUtterance({ source, text, isRepeat }) {
     return;
   }
 
-  // Голосовое уточнение к решённой задаче (после кнопки «🎤 Уточнить»):
-  // первая же моя реплика трактуется как просьба переделать решение.
-  if (awaitingTaskQuestion && source === "me") {
-    awaitingTaskQuestion = false;
-    clearTimeout(awaitTimer);
-    renderShots();
-    setTicker("⟳ уточнение: " + text);
-    refineTask(text);
-    return;
-  }
-
   if (source === "me" && !micOn) return; // микрофон выключен — игнорируем
   if (source === "them" && !sysOn) return; // собеседник не прослушивается
 
@@ -196,7 +184,9 @@ function handleUtterance({ source, text, isRepeat }) {
   if (triggers) triggers.handleUtterance({ source, text });
 }
 
-// --- Запрос голосовой подсказки (по диалогу, без скриншотов) ---
+// --- Запрос подсказки по триггеру ---
+// Если активна задача (lastTask) — ответ в её контексте (discussTask);
+// иначе обычная голосовая подсказка по диалогу.
 async function requestHint(reason, opts = {}) {
   if (!ai || requesting) return;
 
@@ -223,12 +213,22 @@ async function requestHint(reason, opts = {}) {
 
   try {
     const dialog = buffer.getDialog(60);
-    const hint = await ai.getHint({ dialog, reason }, onProgress);
+    let hint;
+    if (lastTask) {
+      // Задача активна — отвечаем в её контексте (reasoning-модель, без
+      // стриминга): уточняем решение или отвечаем на вопрос о нём.
+      hint = await ai.discussTask(lastTask.images, lastTask.solution, dialog);
+    } else {
+      // Обычная голосовая подсказка по диалогу — со стримингом.
+      hint = await ai.getHint({ dialog, reason }, onProgress);
+    }
     const hasContent =
       hint && (hint.short || hint.detailed) && hint.short !== "—";
     if (hasContent) {
       if (!block) block = createHintBlock(reason);
       fillHintBlock(block, hint); // финальный рендер: код, уточнения
+      // Дальнейшее обсуждение строим уже от свежего решения.
+      if (lastTask) lastTask = { images: lastTask.images, solution: hint };
     } else if (block) {
       block.msg.remove(); // стримили, но финальный ответ пустой
     }
@@ -290,11 +290,6 @@ function renderShots() {
     !started || shots.length >= MAX_SHOTS;
   document.getElementById("shots-solve").disabled =
     !started || shots.length === 0;
-
-  // «Уточнить» доступна, когда уже есть решённая задача.
-  const ask = document.getElementById("shots-ask");
-  ask.disabled = !started || !lastTask;
-  ask.classList.toggle("armed", awaitingTaskQuestion);
 }
 
 // Отправить накопленные скриншоты в GPT и показать решение задачи.
@@ -315,50 +310,6 @@ async function solveShots() {
     }
   } catch (e) {
     console.error("solveTask:", e);
-  } finally {
-    requesting = false;
-    showStatus(!started ? "error" : micOn ? "listening" : "muted");
-  }
-}
-
-// «🎤 Уточнить» — включаем ожидание голосового уточнения к решённой задаче.
-// Следующая моя реплика уйдёт в refineTask (см. handleUtterance).
-function askTaskQuestion() {
-  if (!started || !lastTask || awaitingTaskQuestion) return;
-  if (!micOn) setMic(true); // нужно слышать ваш голос
-  awaitingTaskQuestion = true;
-  renderShots();
-  setTicker("🎤 говорите уточнение к задаче…", false);
-  clearTimeout(awaitTimer);
-  awaitTimer = setTimeout(() => {
-    if (!awaitingTaskQuestion) return;
-    awaitingTaskQuestion = false;
-    renderShots();
-    setTicker("уточнение отменено — не было речи", false);
-  }, 25000);
-}
-
-// Переделать решение последней задачи с учётом голосовой просьбы.
-// Новое решение добавляется НОВЫМ блоком снизу, старое не трогается.
-async function refineTask(question) {
-  if (!ai || requesting || !lastTask) return;
-  requesting = true;
-  showStatus("thinking");
-  try {
-    const hint = await ai.refineTask(
-      lastTask.images,
-      lastTask.solution,
-      question
-    );
-    if (hint && (hint.short || hint.detailed)) {
-      addHint(hint, "Уточнение: " + question);
-      // Дальнейшие уточнения отсчитываем уже от свежего решения.
-      lastTask = { images: lastTask.images, solution: hint };
-    } else {
-      setTicker("⚠ не удалось уточнить решение", false);
-    }
-  } catch (e) {
-    console.error("refineTask:", e);
   } finally {
     requesting = false;
     showStatus(!started ? "error" : micOn ? "listening" : "muted");
@@ -482,8 +433,19 @@ function renderRichText(container, text) {
   });
 }
 
-function clearMessages() {
+// Очистка беседы — стираем ленту и весь контекст вопроса, чтобы следующий
+// вопрос обрабатывался с чистого листа: буфер диалога, контекст модели,
+// состояние триггеров и антидубль.
+function clearConversation() {
   document.getElementById("hint-list").innerHTML = "";
+  buffer.clear();
+  lastRequestTs = 0;
+  shots = []; // снимки и решённая задача — тоже под ноль
+  lastTask = null;
+  if (ai) ai.clearContext();
+  if (triggers) triggers.reset();
+  renderShots();
+  setTicker("беседа очищена — новый вопрос", false);
 }
 
 const STATUS_LABELS = {
@@ -606,11 +568,38 @@ document
 // Снимок области экрана по горячей клавише — Cmd+Shift+C.
 window.ghostAPI.onCaptureShot(() => captureShot());
 document.getElementById("shots-solve").addEventListener("click", solveShots);
-document.getElementById("shots-ask").addEventListener("click", askTaskQuestion);
 renderShots(); // начальное состояние панели (кнопки выключены)
 
 // Очистка ленты — кнопка 🗑.
-document.getElementById("clear-btn").addEventListener("click", clearMessages);
+document
+  .getElementById("clear-btn")
+  .addEventListener("click", clearConversation);
+
+// --- Активация кнопок удержанием курсора ---
+// Наводим курсор на кнопку (панель управления + «Решить») и держим 3 сек —
+// кнопка срабатывает, как клик. Снизу бежит полоска-индикатор.
+// Обычный клик тоже работает.
+const DWELL_MS = 3000;
+document
+  .querySelectorAll("#hint-controls button, #shots-solve")
+  .forEach((btn) => {
+  let timer = null;
+  const cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    btn.classList.remove("dwelling");
+  };
+  btn.addEventListener("mouseenter", () => {
+    btn.classList.add("dwelling");
+    timer = setTimeout(() => {
+      timer = null;
+      btn.classList.remove("dwelling");
+      btn.click();
+    }, DWELL_MS);
+  });
+  btn.addEventListener("mouseleave", cancel);
+  btn.addEventListener("click", cancel); // обычный клик — отменяем удержание
+});
 
 // Кнопка «–» в шапке — свернуть оверлей в трей (вернуть — клик по иконке трея).
 document
