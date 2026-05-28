@@ -7,8 +7,6 @@ const {
   desktopCapturer,
   ipcMain,
   globalShortcut,
-  Tray,
-  Menu,
   screen,
   systemPreferences,
   session,
@@ -25,7 +23,6 @@ const store = require("./src/utils/store");
 
 let overlayWindow = null;
 let settingsWindow = null;
-let tray = null;
 
 // ⭐ Свой протокол ghost://app/… вместо file://.
 // VAD-движку (@ricky0123/vad-web + onnxruntime-web) нужно грузить ONNX-модель,
@@ -186,7 +183,6 @@ let quitting = false;
 function quitApp() {
   if (quitting) return;
   quitting = true;
-  if (tray && !tray.isDestroyed()) tray.destroy();
   app.quit();
   setTimeout(() => app.exit(0), 500);
 }
@@ -250,47 +246,14 @@ app.whenReady().then(async () => {
   );
   globalShortcut.register("CommandOrControl+Shift+Q", quitApp);
 
-  // Иконка в трее.
-  const trayIcon = nativeImage.createFromPath(
-    path.join(__dirname, "assets", "trayTemplate.png")
-  );
-  trayIcon.setTemplateImage(true);
-  tray = new Tray(trayIcon);
-  tray.setToolTip("AI Ghost — клик: показать/скрыть, правый клик: меню");
-  const trayMenu = Menu.buildFromTemplate([
-    { label: "Показать / скрыть оверлей", click: toggleOverlay },
-    {
-      label: "Микрофон вкл/выкл",
-      click: () => notifyOverlay("toggle-mic"),
-    },
-    {
-      label: "Принудительная подсказка (со скриншотом)",
-      click: () => notifyOverlay("force-hint"),
-    },
-    {
-      label: "Переспросить (повтор распознавания)",
-      click: () => notifyOverlay("repeat-question"),
-    },
-    {
-      label: "Снимок области экрана",
-      click: () => notifyOverlay("capture-shot"),
-    },
-    { label: "Настройки…", click: createSettingsWindow },
-    { type: "separator" },
-    { label: "Выход", click: quitApp },
-  ]);
-  // Левый клик по иконке в трее — свернуть/развернуть оверлей; правый — меню.
-  tray.on("click", toggleOverlay);
-  tray.on("right-click", () => tray.popUpContextMenu(trayMenu));
-
-  // Прячем приложение из дока macOS — управление через трей и хоткеи.
+  // Прячем приложение из дока macOS — управление только через хоткеи и
+  // кнопки в самом окне оверлея. Иконки в трее (меню-баре) тоже нет.
   if (process.platform === "darwin" && app.dock) app.dock.hide();
 });
 
 app.on("window-all-closed", quitApp);
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
-  if (tray && !tray.isDestroyed()) tray.destroy(); // убираем иконку из трея
 });
 
 // --- IPC: интерактивный снимок (выделение области мышью) ---

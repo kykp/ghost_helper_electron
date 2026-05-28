@@ -33,18 +33,26 @@
 
     <label class="field">
       <span class="label">
-        Минимальный интервал между подсказками:
-        <b id="minIntervalVal">15</b> сек
+        Пауза в речи перед запросом:
+        <b id="pauseSecVal">2</b> сек
       </span>
-      <input id="minInterval" type="range" min="10" max="30" step="1" />
+      <input id="pauseSec" type="range" min="1" max="5" step="1" />
     </label>
 
     <label class="field">
       <span class="label">
-        Тишина после вопроса → срочная подсказка:
-        <b id="silenceThresholdVal">5</b> сек
+        Force-fire, если pending висит дольше:
+        <b id="maxWaitSecVal">7</b> сек
       </span>
-      <input id="silenceThreshold" type="range" min="3" max="12" step="1" />
+      <input id="maxWaitSec" type="range" min="3" max="20" step="1" />
+    </label>
+
+    <label class="field">
+      <span class="label">
+        Минимальный интервал между подсказками:
+        <b id="minIntervalVal">3</b> сек
+      </span>
+      <input id="minInterval" type="range" min="1" max="15" step="1" />
     </label>
 
     <label class="field">

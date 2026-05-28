@@ -13,8 +13,9 @@ let triggers = null;
 let ai = null;
 let settings = {
   lang: "ru",
-  minInterval: 10,
-  silenceThreshold: 5,
+  minInterval: 3,
+  pauseSec: 2,
+  maxWaitSec: 7,
 };
 
 let started = false;
@@ -22,7 +23,6 @@ let micOn = false; // микрофон по умолчанию выключен 
 let sysOn = true; // системный звук (голос собеседника) слушаем по умолчанию
 let requesting = false; // запрос в GPT уже идёт — не плодим параллельные
 let lastRequestTs = 0; // время последней реплики на момент прошлого запроса
-let topicInterval = null;
 let tickInterval = null;
 
 // Скриншоты для режима «решение задачи» — до MAX_SHOTS штук (base64 JPEG).
@@ -96,7 +96,8 @@ async function init() {
 
   triggers = new TriggerManager({
     minIntervalSec: settings.minInterval,
-    silenceThresholdSec: settings.silenceThreshold,
+    pauseSec: settings.pauseSec,
+    maxWaitSec: settings.maxWaitSec,
   });
   triggers.onTrigger = (reason) => requestHint(reason);
 
@@ -148,18 +149,10 @@ async function init() {
     }
   }
 
-  // Тик триггеров — реализует отложенные и срочные срабатывания.
+  // Тик триггеров — реализует отложенное срабатывание после паузы в речи.
   tickInterval = setInterval(() => {
     if (triggers) triggers.tick();
   }, 250);
-
-  // Проверка смены темы — последние 30 сек против предыдущих 30 сек.
-  topicInterval = setInterval(() => {
-    if (!triggers) return;
-    const recent = buffer.getRange(30, 0);
-    const previous = buffer.getRange(60, 30);
-    if (recent && previous) triggers.checkTopicChange(recent, previous);
-  }, 15000);
 }
 
 // --- Новая распознанная реплика ---
@@ -199,6 +192,7 @@ async function requestHint(reason, opts = {}) {
   lastRequestTs = lastTs;
 
   requesting = true;
+  if (triggers) triggers.setRequesting(true);
   showStatus("thinking");
 
   let block = null; // блок ответа создаём лениво — при первом куске текста
@@ -237,6 +231,7 @@ async function requestHint(reason, opts = {}) {
     if (block) block.msg.remove();
   } finally {
     requesting = false;
+    if (triggers) triggers.setRequesting(false);
     showStatus(!started ? "error" : micOn ? "listening" : "muted");
   }
 }
@@ -297,6 +292,7 @@ function renderShots() {
 async function solveShots() {
   if (!started || !ai || requesting || !shots.length) return;
   requesting = true;
+  if (triggers) triggers.setRequesting(true);
   showStatus("thinking");
   const sent = shots.slice(); // запоминаем — пригодятся для уточнений
   try {
@@ -313,6 +309,7 @@ async function solveShots() {
     console.error("solveTask:", e);
   } finally {
     requesting = false;
+    if (triggers) triggers.setRequesting(false);
     showStatus(!started ? "error" : micOn ? "listening" : "muted");
   }
 }
@@ -746,7 +743,8 @@ window.ghostAPI.onSettingsUpdated(async () => {
   sysListener.configure({ apiKey, lang: settings.lang });
   if (triggers) {
     triggers.setMinInterval(settings.minInterval);
-    triggers.setSilenceThreshold(settings.silenceThreshold);
+    triggers.setPause(settings.pauseSec);
+    triggers.setMaxWait(settings.maxWaitSec);
   }
 });
 

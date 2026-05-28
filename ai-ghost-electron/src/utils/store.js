@@ -9,8 +9,9 @@ const store = new Store({
     "overlay-bounds": null, // { x, y, width, height } — размер/позиция окна
     settings: {
       lang: "ru", // язык распознавания речи
-      minInterval: 10, // мин. интервал между запросами в GPT, сек (антиспам)
-      silenceThreshold: 5, // тишина после вопроса → срочная подсказка, сек
+      minInterval: 3, // мин. интервал между запросами в GPT, сек (антиспам)
+      pauseSec: 2, // пауза в речи перед запросом, сек
+      maxWaitSec: 7, // pending дольше этого → force-fire без паузы, сек
       opacity: 0.72, // плотность тёмной подложки оверлея, 0.3–1
       fontSize: 20, // размер шрифта в ленте ответов, px
     },

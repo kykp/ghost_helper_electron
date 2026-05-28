@@ -5,11 +5,13 @@ const el = {
   toggleKey: document.getElementById("toggleKey"),
   lang: document.getElementById("lang"),
   minInterval: document.getElementById("minInterval"),
-  silenceThreshold: document.getElementById("silenceThreshold"),
+  pauseSec: document.getElementById("pauseSec"),
+  maxWaitSec: document.getElementById("maxWaitSec"),
   opacity: document.getElementById("opacity"),
   fontSize: document.getElementById("fontSize"),
   minIntervalVal: document.getElementById("minIntervalVal"),
-  silenceThresholdVal: document.getElementById("silenceThresholdVal"),
+  pauseSecVal: document.getElementById("pauseSecVal"),
+  maxWaitSecVal: document.getElementById("maxWaitSecVal"),
   opacityVal: document.getElementById("opacityVal"),
   fontSizeVal: document.getElementById("fontSizeVal"),
   testBtn: document.getElementById("testBtn"),
@@ -28,8 +30,9 @@ async function load() {
   el.apiKey.value = (await window.ghostAPI.getApiKey()) || "";
   savedSettings = (await window.ghostAPI.getSettings()) || {};
   el.lang.value = savedSettings.lang || "ru";
-  el.minInterval.value = savedSettings.minInterval ?? 10;
-  el.silenceThreshold.value = savedSettings.silenceThreshold ?? 5;
+  el.minInterval.value = savedSettings.minInterval ?? 3;
+  el.pauseSec.value = savedSettings.pauseSec ?? 2;
+  el.maxWaitSec.value = savedSettings.maxWaitSec ?? 7;
   el.opacity.value = Math.round((savedSettings.opacity ?? 0.72) * 100);
   el.fontSize.value = savedSettings.fontSize ?? 20;
   syncLabels();
@@ -37,12 +40,13 @@ async function load() {
 
 function syncLabels() {
   el.minIntervalVal.textContent = el.minInterval.value;
-  el.silenceThresholdVal.textContent = el.silenceThreshold.value;
+  el.pauseSecVal.textContent = el.pauseSec.value;
+  el.maxWaitSecVal.textContent = el.maxWaitSec.value;
   el.opacityVal.textContent = el.opacity.value;
   el.fontSizeVal.textContent = el.fontSize.value;
 }
 
-["minInterval", "silenceThreshold", "opacity", "fontSize"].forEach((k) => {
+["minInterval", "pauseSec", "maxWaitSec", "opacity", "fontSize"].forEach((k) => {
   el[k].addEventListener("input", syncLabels);
 });
 
@@ -76,7 +80,8 @@ el.saveBtn.addEventListener("click", async () => {
     ...savedSettings, // сохраняем поля, для которых здесь нет UI
     lang: el.lang.value,
     minInterval: Number(el.minInterval.value),
-    silenceThreshold: Number(el.silenceThreshold.value),
+    pauseSec: Number(el.pauseSec.value),
+    maxWaitSec: Number(el.maxWaitSec.value),
     opacity: Number(el.opacity.value) / 100,
     fontSize: Number(el.fontSize.value),
   });
