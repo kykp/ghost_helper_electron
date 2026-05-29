@@ -519,40 +519,71 @@ body {
   border-radius: 3px;
 }
 
-/* Уточняющие вопросы — внизу блока */
-.hint-followups {
-  margin-top: 11px;
-  padding-top: 9px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+/* Дополнение к прошлой теме — визуально читается как ответвление, а не
+   самостоятельный ответ. Цвет акцента берётся из CSS-переменной
+   --addon-accent (R, G, B как тройка чисел), её задают классы .addon-c1…c5
+   ниже — каждое следующее дополнение в цепочке получает свой цвет. */
+.hint-msg.addon {
+  --addon-accent: 129, 140, 248; /* дефолт-фоллбэк, если класс c* не задан */
+  margin: 0 4px 0 22px;
+  padding: 10px 12px 12px 14px;
+  border-left: 3px solid rgb(var(--addon-accent));
+  background: linear-gradient(
+    90deg,
+    rgba(var(--addon-accent), 0.14) 0%,
+    rgba(var(--addon-accent), 0.04) 60%,
+    transparent 100%
+  );
+  border-radius: 0 8px 8px 0;
 }
 
-.hint-followups-title {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: #62657a;
-  margin-bottom: 5px;
+/* Палитра из 5 цветов: каждое следующее дополнение в цепочке циклически
+   берёт следующий. Подобрано так, чтобы разница была явной даже мельком. */
+.hint-msg.addon.addon-c1 { --addon-accent: 129, 140, 248; } /* фиолетовый */
+.hint-msg.addon.addon-c2 { --addon-accent: 34, 211, 238; }  /* циан      */
+.hint-msg.addon.addon-c3 { --addon-accent: 52, 211, 153; }  /* зелёный   */
+.hint-msg.addon.addon-c4 { --addon-accent: 251, 191, 36; }  /* янтарный  */
+.hint-msg.addon.addon-c5 { --addon-accent: 244, 114, 182; } /* розовый   */
+
+/* Склеиваем addon с предыдущим блоком: без верхней линии-разделителя. */
+.hint-msg + .hint-msg.addon {
+  border-top: none;
+  padding-top: 10px;
+  margin-top: 2px;
 }
 
-.hint-followup {
-  font-size: calc(var(--hint-font) - 1px);
-  line-height: 1.5;
-  color: #a8abbd;
-  padding-left: 13px;
-  position: relative;
+.hint-msg.addon .hint-trigger {
+  display: inline-flex;
+  padding: 3px 9px 3px 7px;
+  background: rgba(var(--addon-accent), 0.22);
+  border: 1px solid rgba(var(--addon-accent), 0.4);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: rgb(var(--addon-accent));
+  margin-bottom: 10px;
 }
 
-.hint-followup + .hint-followup {
-  margin-top: 3px;
-}
-
-.hint-followup::before {
-  content: "?";
-  position: absolute;
-  left: 0;
-  color: #818cf8;
+.hint-msg.addon .hint-trigger::before {
+  content: "↳";
+  background: transparent;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 1;
   font-weight: 700;
+  color: rgb(var(--addon-accent));
+  margin-right: 1px;
+}
+
+/* «short» в дополнении — чуть мельче, мягче по цвету: подчёркивает, что
+   это не полный новый ответ, а добавка к предыдущему. */
+.hint-msg.addon .hint-short {
+  font-size: var(--hint-font);
+  font-weight: 500;
+  color: #e8eaf6;
 }
 
 /* Текст системного сообщения (ошибки, инструкции) */

@@ -31,7 +31,7 @@ async function load() {
   savedSettings = (await window.ghostAPI.getSettings()) || {};
   el.lang.value = savedSettings.lang || "ru";
   el.minInterval.value = savedSettings.minInterval ?? 3;
-  el.pauseSec.value = savedSettings.pauseSec ?? 2;
+  el.pauseSec.value = savedSettings.pauseSec ?? 1.2;
   el.maxWaitSec.value = savedSettings.maxWaitSec ?? 7;
   el.opacity.value = Math.round((savedSettings.opacity ?? 0.72) * 100);
   el.fontSize.value = savedSettings.fontSize ?? 20;

@@ -14,7 +14,7 @@ let ai = null;
 let settings = {
   lang: "ru",
   minInterval: 3,
-  pauseSec: 2,
+  pauseSec: 1.2,
   maxWaitSec: 7,
 };
 
@@ -28,6 +28,44 @@ let tickInterval = null;
 // Скриншоты для режима «решение задачи» — до MAX_SHOTS штук (base64 JPEG).
 const MAX_SHOTS = 5;
 let shots = [];
+
+// Сколько addon-блоков подряд после последнего «нового» (не-addon) ответа.
+// Каждое следующее дополнение получает следующий цвет из палитры — пять
+// классов .addon-c1…c5 (см. overlay.css). При новом основном ответе
+// счётчик сбрасывается, цикл цветов начинается заново.
+let addonStreak = 0;
+const ADDON_COLOR_COUNT = 5;
+
+// Страховка: если модель забыла поставить "isAddon": true, но "short"
+// начинается с одной из «фраз-маркеров», на которые её натаскивает
+// промпт для режима дополнения, — UI всё равно покажет блок как addon.
+const ADDON_PREFIXES = [
+  "ещё важно",
+  "уточнение",
+  "альтернатива",
+  "стоит добавить",
+  "на самом деле",
+  "дополню",
+  "также важно",
+  "к слову",
+];
+function looksLikeAddon(short) {
+  if (!short) return false;
+  const s = short.toLowerCase().trimStart();
+  return ADDON_PREFIXES.some((p) => s.startsWith(p));
+}
+
+// Помечает блок как addon: класс .addon, очередной цвет из палитры,
+// текст «дополнение» в плашке-триггере. Идемпотентен — повторный вызов
+// не увеличивает счётчик и не меняет цвет.
+function applyAddon(block) {
+  if (block.msg.classList.contains("addon")) return;
+  addonStreak++;
+  const idx = ((addonStreak - 1) % ADDON_COLOR_COUNT) + 1;
+  block.msg.classList.add("addon", "addon-c" + idx);
+  const trig = block.msg.querySelector(".hint-trigger");
+  if (trig) trig.textContent = "дополнение";
+}
 
 // Активная решённая задача. Пока она задана — весь разговор трактуется как
 // обсуждение этой задачи: ответы идут в её контексте. Сброс — кнопкой 🗑.
@@ -150,9 +188,11 @@ async function init() {
   }
 
   // Тик триггеров — реализует отложенное срабатывание после паузы в речи.
+  // 100 мс: чем чаще, тем быстрее «ловим» истёкшую паузу и стреляем —
+  // задержка на этом этапе становится незаметной.
   tickInterval = setInterval(() => {
     if (triggers) triggers.tick();
-  }, 250);
+  }, 100);
 }
 
 // --- Новая распознанная реплика ---
@@ -195,33 +235,49 @@ async function requestHint(reason, opts = {}) {
   if (triggers) triggers.setRequesting(true);
   showStatus("thinking");
 
-  let block = null; // блок ответа создаём лениво — при первом куске текста
+  // Гибридный стриминг: "short" рисуем по буквам, "detailed" — одним
+  // куском в конце (иначе разметка код-блоков прыгает во время чтения).
+  // Блок открываем лениво при первом непустом short — чтобы не плодить
+  // пустые рамки, если модель вернёт "—".
+  let block = null;
 
-  // Живой показ ответа по мере стриминга.
-  const onProgress = ({ short, detailed }) => {
-    if (short === "—") return; // модель сообщает «подсказка не нужна»
-    if (!short && !detailed) return;
-    if (!block) block = createHintBlock(reason);
-    streamHintBlock(block, { short, detailed });
+  const onProgress = ({ short, isAddon }) => {
+    if (short === "—") return;
+    const addon = isAddon === true || looksLikeAddon(short);
+    if (!block) {
+      if (!short) return; // ждём первых букв, чтобы открыть блок осмысленно
+      block = createHintBlock(addon ? "дополнение" : reason);
+      if (addon) applyAddon(block);
+      else addonStreak = 0; // основной ответ — обрываем цепочку дополнений
+    } else if (addon) {
+      // Флаг (или фраза-маркер) пришёл уже после открытия блока — навешиваем
+      // addon-стиль на лету. applyAddon идемпотентен.
+      applyAddon(block);
+    }
+    block.short.textContent = short;
+    block.short.style.display = "";
+    const list = document.getElementById("hint-list");
+    list.scrollTop = list.scrollHeight;
   };
 
   try {
     const dialog = buffer.getDialog(60);
-    let hint;
-    if (lastTask) {
-      // Задача активна — отвечаем в её контексте (reasoning-модель, без
-      // стриминга): уточняем решение или отвечаем на вопрос о нём.
-      hint = await ai.discussTask(lastTask.images, lastTask.solution, dialog);
-    } else {
-      // Обычная голосовая подсказка по диалогу — со стримингом.
-      hint = await ai.getHint({ dialog, reason }, onProgress);
-    }
+    const hint = lastTask
+      ? await ai.discussTask(lastTask.images, lastTask.solution, dialog)
+      : await ai.getHint({ dialog, reason }, onProgress);
     const hasContent =
       hint && (hint.short || hint.detailed) && hint.short !== "—";
     if (hasContent) {
-      if (!block) block = createHintBlock(reason);
-      fillHintBlock(block, hint); // финальный рендер: код, уточнения
-      // Дальнейшее обсуждение строим уже от свежего решения.
+      const addon = !!hint.isAddon || looksLikeAddon(hint.short);
+      if (!block) {
+        // discussTask или ответ без стриминга — открываем блок здесь.
+        block = createHintBlock(addon ? "дополнение" : reason);
+        if (addon) applyAddon(block);
+        else addonStreak = 0;
+      } else if (addon) {
+        applyAddon(block); // финальная страховка, если стрим не успел
+      }
+      fillHintBlock(block, hint); // финальный рендер: код в detailed
       if (lastTask) lastTask = { images: lastTask.images, solution: hint };
     } else if (block) {
       block.msg.remove(); // стримили, но финальный ответ пустой
@@ -328,9 +384,9 @@ function addMessage(text) {
   list.scrollTop = list.scrollHeight;
 }
 
-// Создаёт пустой блок ответа в ленте; возвращает ссылки для наполнения —
-// в т.ч. постепенного, во время стриминга. Блоки НИКОГДА не удаляются
-// после показа: каждый новый вопрос добавляет новый блок снизу.
+// Создаёт пустой блок ответа в ленте; возвращает ссылки для наполнения.
+// Блоки НИКОГДА не удаляются после показа: каждый новый вопрос добавляет
+// новый блок снизу.
 function createHintBlock(reason) {
   const list = document.getElementById("hint-list");
   const msg = document.createElement("div");
@@ -358,19 +414,7 @@ function createHintBlock(reason) {
   return { msg, short, detailed };
 }
 
-// Промежуточное наполнение во время стриминга — простой текст, без
-// разметки код-блоков (она появится в финальном fillHintBlock).
-function streamHintBlock(block, { short, detailed }) {
-  block.short.textContent = short;
-  block.short.style.display = short ? "" : "none";
-  block.detailed.textContent = detailed;
-  block.detailed.style.display = detailed ? "" : "none";
-  const list = document.getElementById("hint-list");
-  list.scrollTop = list.scrollHeight;
-}
-
-// Финальное наполнение блока структурированным ответом: код-блоки в
-// развёрнутой части и уточняющие вопросы снизу.
+// Наполнение блока структурированным ответом: код-блоки в развёрнутой части.
 function fillHintBlock(block, hint) {
   block.short.textContent = hint.short || "";
   block.short.style.display = hint.short ? "" : "none";
@@ -383,29 +427,17 @@ function fillHintBlock(block, hint) {
     block.detailed.style.display = "none";
   }
 
-  if (hint.followups && hint.followups.length) {
-    const fu = document.createElement("div");
-    fu.className = "hint-followups";
-    const title = document.createElement("div");
-    title.className = "hint-followups-title";
-    title.textContent = "Уточняющие вопросы";
-    fu.appendChild(title);
-    for (const q of hint.followups) {
-      const row = document.createElement("div");
-      row.className = "hint-followup";
-      row.textContent = q;
-      fu.appendChild(row);
-    }
-    block.msg.appendChild(fu);
-  }
-
   const list = document.getElementById("hint-list");
   list.scrollTop = list.scrollHeight;
 }
 
-// Готовый ответ одним куском (режим скриншотов — там стриминга нет).
 function addHint(hint, reason) {
-  fillHintBlock(createHintBlock(reason), hint);
+  // Дополнение к прошлой теме — другой ярлык и стиль блока, чтобы визуально
+  // отличить от полноценного ответа на новый вопрос.
+  const triggerLabel = hint.isAddon ? "дополнение" : reason;
+  const block = createHintBlock(triggerLabel);
+  if (hint.isAddon) block.msg.classList.add("addon");
+  fillHintBlock(block, hint);
 }
 
 // Текст с код-блоками в тройных кавычках ```…``` → абзацы + <pre><code>.
@@ -440,6 +472,7 @@ function clearConversation() {
   lastRequestTs = 0;
   shots = []; // снимки и решённая задача — тоже под ноль
   lastTask = null;
+  addonStreak = 0; // цепочка дополнений тоже под ноль
   if (ai) ai.clearContext();
   if (triggers) triggers.reset();
   renderShots();
