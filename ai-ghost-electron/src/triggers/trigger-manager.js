@@ -17,7 +17,7 @@
 //     `minInterval` между запросами и максимум `maxPerMinute` в минуту.
 class TriggerManager {
   constructor(opts = {}) {
-    this.pauseMs = (opts.pauseSec ?? 1.2) * 1000;
+    this.pauseMs = (opts.pauseSec ?? 0.6) * 1000;
     this.maxWaitMs = (opts.maxWaitSec ?? 7) * 1000;
     this.minInterval = (opts.minIntervalSec ?? 3) * 1000;
     this.maxPerMinute = 12;

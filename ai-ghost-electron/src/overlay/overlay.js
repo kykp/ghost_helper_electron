@@ -14,7 +14,7 @@ let ai = null;
 let settings = {
   lang: "ru",
   minInterval: 3,
-  pauseSec: 1.2,
+  pauseSec: 0.6,
   maxWaitSec: 7,
 };
 
@@ -261,7 +261,7 @@ async function requestHint(reason, opts = {}) {
   };
 
   try {
-    const dialog = buffer.getDialog(60);
+    const dialog = buffer.getDialog(30);
     const hint = lastTask
       ? await ai.discussTask(lastTask.images, lastTask.solution, dialog)
       : await ai.getHint({ dialog, reason }, onProgress);
