@@ -293,15 +293,14 @@ async function requestHint(reason, opts = {}) {
 }
 
 // --- Скриншоты: режим «решение задачи по коду» ---
-// Жмём «Снимок» — оверлей прячется, появляется нативное выделение macOS:
-// тянем рамку по нужной области, отпускаем — снимок добавлен. Так можно
-// собрать до MAX_SHOTS снимков и отправить всё одним запросом в GPT.
+// Жмём «Снимок» — оверлей прячется и снимается весь экран целиком.
+// Модель сама найдёт на снимке вопрос/задачу. До MAX_SHOTS снимков на запрос.
 
 async function captureShot() {
   if (!started || shots.length >= MAX_SHOTS) return;
   const img = await screenCapture.captureInteractive();
   if (!img) {
-    setTicker("⚠ снимок не сделан (выделение отменено)", false);
+    setTicker("⚠ снимок не сделан", false);
     return;
   }
   shots.push(img);

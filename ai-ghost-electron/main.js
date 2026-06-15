@@ -256,19 +256,21 @@ app.on("will-quit", () => {
   globalShortcut.unregisterAll();
 });
 
-// --- IPC: интерактивный снимок (выделение области мышью) ---
-// Нативное выделение macOS: пользователь тянет рамку от курсора и отпускает.
+// --- IPC: снимок всего экрана ---
+// Снимаем главный монитор целиком — модель сама найдёт на нём вопрос/задачу.
 ipcMain.handle("capture-interactive", async () => {
   if (process.platform !== "darwin") return null;
   const tmpFile = path.join(os.tmpdir(), `ghost-shot-${Date.now()}.png`);
-  // Прячем оверлей, чтобы он не мешал выделять область.
+  // Прячем оверлей, чтобы он не попал в кадр.
   const wasVisible =
     overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible();
   if (wasVisible) overlayWindow.hide();
+  // Даём окну реально исчезнуть до съёмки (один кадр компоновщика).
+  await new Promise((r) => setTimeout(r, 120));
   try {
     await new Promise((resolve) => {
-      // -i — интерактивное выделение области, -x — без звука затвора.
-      execFile("/usr/sbin/screencapture", ["-i", "-x", tmpFile], () =>
+      // -m — только главный монитор, -x — без звука затвора.
+      execFile("/usr/sbin/screencapture", ["-m", "-x", tmpFile], () =>
         resolve()
       );
     });
@@ -276,7 +278,7 @@ ipcMain.handle("capture-interactive", async () => {
     try {
       buf = await fs.promises.readFile(tmpFile);
     } catch (e) {
-      buf = null; // файла нет → пользователь отменил выделение (Esc)
+      buf = null;
     }
     if (!buf) return null;
     const img = nativeImage.createFromBuffer(buf);
